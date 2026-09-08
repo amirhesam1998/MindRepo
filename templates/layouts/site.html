@@ -1,0 +1,41 @@
+{% load static i18n %}
+{% get_current_language as LANGUAGE_CODE %}
+<!doctype html>
+<html lang="{{ LANGUAGE_CODE }}" dir="{% if LANGUAGE_CODE == 'fa' %}rtl{% else %}ltr{% endif %}" data-theme="light" data-pwa-enabled="{{ pwa_enabled|yesno:'true,false' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="MindRepo is your private developer knowledge system for quick recall.">
+  <meta name="theme-color" content="#f8fafc">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="{% url 'core:manifest' %}">
+  <link rel="icon" href="{% static 'icons/mindrepo.svg' %}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{% static 'icons/icon-192.png' %}">
+  <title>{% block title %}MindRepo{% endblock %}</title>
+  <script>
+    (() => {
+      const preference = localStorage.getItem("mindrepo-theme") || "system";
+      const resolved = preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : preference === "system" ? "light" : preference;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themePreference = preference;
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", resolved === "dark" ? "#111816" : "#f8fafc");
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.rtl.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <a class="skip-link" href="#main-content">{% if LANGUAGE_CODE == "fa" %}رفتن به محتوا{% else %}Skip to content{% endif %}</a>
+  <div class="connectivity-indicator" data-connectivity hidden role="status" aria-live="polite">{% if LANGUAGE_CODE == "fa" %}آفلاین هستید.{% else %}You're offline.{% endif %}</div>
+  {% include "partials/messages.html" %}
+  {% block body %}{% endblock %}
+  <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
+  <script src="{% static 'vendor/alpine/alpine.min.js' %}" defer></script>
+  <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}" defer></script>
+  <script src="{% static 'js/app.js' %}" defer></script>
+  {% if offline_knowledge_enabled %}<script type="module" src="{% static 'js/offline.js' %}"></script>{% endif %}
+</body>
+</html>

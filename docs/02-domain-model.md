@@ -1,0 +1,62 @@
+# Domain model
+
+## Implemented Level 2 entities
+
+| Entity | Decision | Notes |
+| --- | --- | --- |
+| `User` | custom `accounts.User` | Django `AbstractUser` from the first migration. |
+| `Category` | owned adjacency-list tree | Nullable `parent`; title/slug uniqueness is scoped per owner and sibling/root position. |
+| `Concept` | central owned model | Unicode owner-scoped slug, optional category, three distinct text depths, difficulty, favorite state, timestamps. |
+| `Tag` | owned many-to-many model | Whitespace/case-fold normalized name prevents duplicate tags per owner. |
+| `ConceptAlias` | concept child | Searchable normalized values; duplicates are prevented per concept. |
+| `CodeSnippet` | ordered concept child | Flexible safe language identifier, source code, explanation, and position. |
+| `CommonMistake` | ordered concept child | Structured title, description, optional correction, and position. |
+| `ConceptRelation` | directed typed child | Source, target, and `related`/`prerequisite`/`extends`/`contrasts`/`example_of` type. |
+| Favorite | `Concept.is_favorite` boolean | A separate relation adds no value for a single concept owner. |
+| `ConceptReviewState` | one-to-one review state | Current scheduling state: lifecycle, due time, interval, counts, scheduler metadata, and optimistic version. |
+| `ReviewLog` | immutable review history | One row per submitted rating with previous/new lifecycle, due time, interval, rating, and scheduler version. |
+| Search result | derived queryset | No `SearchResult` table; the `search` selector ranks user-owned concepts at query time. |
+| Random recall | derived request state | No persistence; it never changes review records. |
+| `OfflineChange` | owner-scoped sync change log | Ordered upsert/delete events for a Concept aggregate; deletions are tombstones. |
+| `AppliedClientMutation` | idempotency receipt | Unique per owner/client UUID; stores the canonical result of a supported offline mutation. |
+
+## Relationships
+
+```text
+User 1--* Category (parent -> Category)
+User 1--* Tag *--* Concept *--0..1 Category
+Concept 1--* ConceptAlias
+Concept 1--* CodeSnippet
+Concept 1--* CommonMistake
+Concept 1--* ConceptRelation -> target Concept
+Concept 1--1 ConceptReviewState
+Concept 1--* ReviewLog
+User 1--* OfflineChange
+User 1--* AppliedClientMutation
+```
+
+Every private record is loaded through `owner=request.user`. Category choices, relation targets, tag records, and all detail/edit/delete querysets stay within that boundary.
+
+Level 7 adds no new persistent domain model: Analytics and portability are owner-scoped derived services. Imported Concepts use the same ordinary models, signals, and offline change tracking as online creation.
+
+## Integrity and content
+
+Categories reject self-parenting, cross-owner parents, and indirect cycles. Unsafe category deletion is blocked if concepts or children exist. Concepts may be uncategorized to preserve fast capture.
+
+Tags and aliases normalize whitespace and case for uniqueness while preserving their readable value. Relations are directed because their type carries a semantic direction; duplicate typed edges and self-relations are prevented by database constraints.
+
+Concept text is stored and rendered as plain text with Django autoescaping and line-break formatting. Submitted HTML and code are never marked safe or executed. A future Markdown/rich-content feature must use an allowlist sanitizer.
+
+## Review state
+
+All concepts are reviewable by default. `ConceptReviewState` is created on concept creation and old concepts were backfilled in the Level 4 migration. States are `new`, `learning`, `review`, and `relearning`. `due_at` is timezone-aware; a concept is due when `due_at <= timezone.now()`.
+
+`ReviewLog` is append-only in the user interface and read-only in admin. Deleting a concept intentionally cascades its schedule and history, avoiding orphaned private learning data. Mastery is derived, not stored: `New` for never-reviewed concepts, `Learning` during learning/relearning, `Familiar` for review-stage concepts, and `Strong` after at least three successful reviews with an interval of 21 days or more.
+
+## Discovery
+
+`Concept.is_favorite` remains the only favorite storage. Search, palette, favorites, and random selection are all scoped through the concept owner. Search has no persisted history in Level 5, keeping queries private to the current request and avoiding a new personal-data model.
+
+## Offline synchronization
+
+`Concept.sync_version` is a server-authoritative aggregate version. Normal online creates, edits, favorite changes, and deletions record `OfflineChange` entries through narrowly scoped Concept lifecycle hooks. The Level 6 client syncs a denormalized Concept document and sends its base version for a supported mutation. A stale version returns a conflict; the server never silently overwrites newer text. Review state and logs are deliberately outside the aggregate.

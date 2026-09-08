@@ -1,0 +1,3 @@
+{% extends "layouts/site.html" %}{% load mindrepo_i18n %}
+{% block title %}{{ "Access denied"|tr }} · MindRepo{% endblock %}
+{% block body %}<main class="error-page"><section><p class="page-context">403</p><h1>{{ "Access denied"|tr }}</h1><p>{{ "You do not have permission to open this page."|tr }}</p><a class="btn btn-primary" href="{% url 'core:dashboard' %}">{{ "Back to dashboard"|tr }}</a></section></main>{% endblock %}

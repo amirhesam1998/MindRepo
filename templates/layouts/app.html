@@ -1,0 +1,13 @@
+{% extends "layouts/site.html" %}
+
+{% block body %}
+  <div class="app-shell">
+    {% include "partials/sidebar.html" %}
+    <main id="main-content" class="app-main" tabindex="-1">
+      {% include "partials/language_switcher.html" with class_name="mobile-language-switcher" switcher_id="mobile-language" %}
+      {% block app_content %}{% endblock %}
+    </main>
+    {% include "partials/mobile_nav.html" %}
+    {% include "partials/command_palette.html" %}
+  </div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "layouts/site.html" %}
+{% load mindrepo_i18n %}
+
+{% block title %}Log in · MindRepo{% endblock %}
+
+{% block body %}
+  <main class="auth-page">
+    <section class="auth-panel" aria-labelledby="login-title">
+      <a class="brand auth-brand" href="{% url 'accounts:login' %}" aria-label="MindRepo login">
+        <span class="brand-mark" aria-hidden="true">M</span><span>MindRepo</span>
+      </a>
+      {% include "partials/language_switcher.html" with class_name="auth-language-switcher" switcher_id="login-language" %}
+      <p class="auth-kicker">{{ "Your personal developer knowledge system."|tr }}</p>
+      <h1 id="login-title">{{ "Welcome back"|tr }}</h1>
+      <p class="auth-copy">{{ "Pick up where your understanding left off."|tr }}</p>
+
+      <form method="post" class="login-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="form-error" role="alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div class="form-field">
+          <label for="{{ form.username.id_for_label }}">{{ "Username"|tr }}</label>
+          <input class="form-control ltr" type="text" name="{{ form.username.html_name }}" id="{{ form.username.id_for_label }}" autocomplete="username" required autofocus value="{{ form.username.value|default:'' }}">
+          {% for error in form.username.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </div>
+        <div class="form-field" x-data="{ visible: false }">
+          <label for="{{ form.password.id_for_label }}">{{ "Password"|tr }}</label>
+          <div class="password-control">
+            <input class="form-control ltr" :type="visible ? 'text' : 'password'" name="{{ form.password.html_name }}" id="{{ form.password.id_for_label }}" autocomplete="current-password" required>
+            <button type="button" class="password-toggle" @click="visible = !visible" :aria-pressed="visible.toString()" data-show="{{ 'Show'|tr }}" data-hide="{{ 'Hide'|tr }}" x-text="visible ? $el.dataset.hide : $el.dataset.show"></button>
+          </div>
+          {% for error in form.password.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </div>
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        <button class="btn btn-primary login-submit" type="submit">{{ "Log in"|tr }}</button>
+      </form>
+    </section>
+  </main>
+{% endblock %}

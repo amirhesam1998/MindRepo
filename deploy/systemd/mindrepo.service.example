@@ -1,0 +1,14 @@
+[Unit]
+Description=MindRepo Gunicorn
+After=network.target
+
+[Service]
+User=mindrepo
+Group=mindrepo
+WorkingDirectory=/srv/mindrepo
+EnvironmentFile=/etc/mindrepo.env
+ExecStart=/srv/mindrepo/.venv/bin/gunicorn --config deploy/gunicorn.conf.py config.wsgi:application
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

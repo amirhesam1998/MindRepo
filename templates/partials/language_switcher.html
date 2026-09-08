@@ -1,0 +1,11 @@
+{% load i18n mindrepo_i18n %}
+{% get_current_language as LANGUAGE_CODE %}
+<form class="language-switcher {{ class_name }}" action="{% url 'set_language' %}" method="post">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <label for="{{ switcher_id }}">{{ "Language"|tr }}</label>
+  <select id="{{ switcher_id }}" name="language" onchange="this.form.submit()">
+    <option value="en" {% if LANGUAGE_CODE == "en" %}selected{% endif %}>English</option>
+    <option value="fa" {% if LANGUAGE_CODE == "fa" %}selected{% endif %}>فارسی</option>
+  </select>
+</form>

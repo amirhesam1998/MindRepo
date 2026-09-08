@@ -1,0 +1,33 @@
+# Environment and secrets
+.env
+.venv/
+env/
+
+# Python and Django
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.sqlite3
+db.sqlite3
+staticfiles/
+media/
+cache/
+*.log
+*.json.zip
+*.mindrepo.json
+
+# Tests and tools
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local repository-analysis artifacts
+graphify-out/
