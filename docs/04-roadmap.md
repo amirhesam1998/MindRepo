@@ -59,3 +59,7 @@ Add import/export, backups, analytics where useful, security review, performance
 ## Level 6 completion
 
 Implemented: opt-in per-device Offline Knowledge, a structured IndexedDB Concept replica, paged bootstrap and incremental change endpoints, deletion tombstones, concept aggregate versions, idempotent favorite mutation queue, manual whole-document conflict choices, offline Library/search/detail reading, and offline Random Recall. Private HTML remains uncached. Offline Concept create/edit/delete, complex nested mutation editing, and offline Review remain deferred.
+
+## Concept editor refinement
+
+Implemented after Level 7: fast capture, collapsible editor sections, token tags, self-hosted Ace editing, sortable snippets and mistakes, compact aliases/relations, and private concept attachments. Attachment binary offline sync remains deferred.

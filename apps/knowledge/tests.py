@@ -1,11 +1,17 @@
 from django.contrib.auth import get_user_model
+import os
+import tempfile
+import zipfile
+from io import BytesIO
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .forms import ConceptForm
-from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptRelation, Tag
+from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptAttachment, ConceptRelation, Tag
 from .portability import apply_import, build_export, export_markdown_zip, validate_import
 
 
@@ -76,6 +82,13 @@ class ConceptTests(KnowledgeTestCase):
         dashboard = self.client.get(reverse("core:dashboard"))
         self.assertContains(dashboard, "1")
         self.assertContains(dashboard, "ACID")
+
+    def test_editor_renders_progressive_enhancement_controls(self):
+        response = self.client.get(reverse("knowledge:concept_create"))
+
+        self.assertContains(response, "data-tag-editor")
+        self.assertContains(response, "data-attachment-input")
+        self.assertContains(response, "Add code example")
 
     def test_concept_form_rejects_another_users_category(self):
         category = Category.objects.create(owner=self.other, title="Private")
@@ -194,6 +207,98 @@ class RelatedDataTests(KnowledgeTestCase):
 
         self.assertContains(response, "Dependency Injection")
         self.assertNotContains(response, ">ACID<", html=False)
+
+
+class AttachmentTests(ConceptTests):
+    def setUp(self):
+        super().setUp()
+        self.media = tempfile.TemporaryDirectory()
+        self.media_settings = override_settings(MEDIA_ROOT=self.media.name)
+        self.media_settings.enable()
+
+    def tearDown(self):
+        self.media_settings.disable()
+        self.media.cleanup()
+        super().tearDown()
+
+    def test_upload_detail_and_owner_scoped_download(self):
+        data = {"title": "Diagram", "quick_definition": "A private file.", "difficulty": "beginner", "tag_names": "[]"}
+        data.update(self.empty_formsets())
+        data["attachments"] = SimpleUploadedFile("diagram.png", b"tiny image", content_type="image/png")
+        response = self.client.post(reverse("knowledge:concept_create"), data)
+
+        concept = Concept.objects.get(title="Diagram")
+        attachment = concept.attachments.get()
+        self.assertRedirects(response, reverse("knowledge:concept_detail", args=[concept.pk, concept.slug]))
+        detail = self.client.get(reverse("knowledge:concept_detail", args=[concept.pk, concept.slug]))
+        self.assertContains(detail, "diagram.png")
+        url = reverse("knowledge:attachment_download", args=[concept.pk, concept.slug, attachment.pk])
+        download = self.client.get(url)
+        self.assertEqual(download.status_code, 200)
+        download.close()
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_attachment_validation_and_explicit_removal(self):
+        data = {"title": "Unsafe", "quick_definition": "No executable upload.", "difficulty": "beginner", "tag_names": "[]"}
+        data.update(self.empty_formsets())
+        data["attachments"] = SimpleUploadedFile("unsafe.exe", b"no", content_type="application/octet-stream")
+        response = self.client.post(reverse("knowledge:concept_create"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Concept.objects.filter(title="Unsafe").exists())
+
+        concept = self.concept("Attached")
+        attachment = ConceptAttachment.objects.create(concept=concept, file=SimpleUploadedFile("note.txt", b"note", content_type="text/plain"), original_name="note.txt", content_type="text/plain", file_size=4)
+        path = attachment.file.path
+        data = {"title": concept.title, "quick_definition": concept.quick_definition, "difficulty": concept.difficulty, "tag_names": "[]", "remove_attachment_ids": str(attachment.pk)}
+        data.update(self.empty_formsets())
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ConceptAttachment.objects.filter(pk=attachment.pk).exists())
+        self.assertFalse(os.path.exists(path))
+
+    def test_concept_delete_cleans_private_attachment_file_after_commit(self):
+        concept = self.concept("Delete attachment")
+        attachment = ConceptAttachment.objects.create(concept=concept, file=SimpleUploadedFile("delete.txt", b"delete", content_type="text/plain"), original_name="delete.txt", content_type="text/plain", file_size=6)
+        path = attachment.file.path
+        with self.captureOnCommitCallbacks(execute=True):
+            concept.delete()
+        self.assertFalse(os.path.exists(path))
+
+    def test_json_tags_and_sort_order_are_saved(self):
+        data = {"title": "Tagged", "quick_definition": "Tag chips serialize JSON.", "difficulty": "beginner", "tag_names": '["Django", " django ", "Python"]'}
+        data.update(self.empty_formsets())
+        data.update({"snippets-TOTAL_FORMS": 2, "snippets-0-title": "Second", "snippets-0-language": "python", "snippets-0-code": "two", "snippets-0-sort_order": 1, "snippets-1-title": "First", "snippets-1-language": "python", "snippets-1-code": "one", "snippets-1-sort_order": 0})
+        response = self.client.post(reverse("knowledge:concept_create"), data)
+        concept = Concept.objects.get(title="Tagged")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(set(concept.tags.values_list("normalized_name", flat=True)), {"django", "python"})
+        self.assertEqual(list(concept.snippets.values_list("title", flat=True)), ["First", "Second"])
+
+    def test_existing_inline_item_can_be_removed_with_hidden_delete_field(self):
+        concept = self.concept("Alias removal")
+        alias = ConceptAlias.objects.create(concept=concept, value="DI")
+        data = {"title": concept.title, "quick_definition": concept.quick_definition, "difficulty": concept.difficulty, "tag_names": "[]", "aliases-TOTAL_FORMS": 1, "aliases-INITIAL_FORMS": 1, "aliases-MIN_NUM_FORMS": 0, "aliases-MAX_NUM_FORMS": 1000, "aliases-0-id": alias.pk, "aliases-0-value": alias.value, "aliases-0-DELETE": "on"}
+        data.update({key: value for key, value in self.empty_formsets().items() if not key.startswith("aliases-")})
+        response = self.client.post(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ConceptAlias.objects.filter(pk=alias.pk).exists())
+
+    def test_markdown_export_copies_sanitized_owned_attachment(self):
+        concept = self.concept("Portable")
+        ConceptAttachment.objects.create(
+            concept=concept,
+            file=SimpleUploadedFile("../../note.txt", b"portable", content_type="text/plain"),
+            original_name="../../note.txt",
+            content_type="text/plain",
+            file_size=8,
+        )
+
+        with zipfile.ZipFile(BytesIO(export_markdown_zip(self.user))) as archive:
+            names = archive.namelist()
+        self.assertTrue(any(name.endswith("note.txt") for name in names))
+        self.assertFalse(any(".." in name for name in names))
 
 
 class PortabilityTests(KnowledgeTestCase):

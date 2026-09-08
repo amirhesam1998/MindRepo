@@ -52,6 +52,7 @@ ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 PWA_ENABLED = env_bool("PWA_ENABLED", False)
 OFFLINE_KNOWLEDGE_ENABLED = env_bool("OFFLINE_KNOWLEDGE_ENABLED", DEBUG)
+TRUSTED_PROXY_IPS = env_list("TRUSTED_PROXY_IPS")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -122,6 +123,8 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"

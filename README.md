@@ -96,6 +96,10 @@ Open `/search/` or use Ctrl/Cmd+K on desktop to search private concepts by title
 
 Open `/analytics/` for owner-scoped learning activity and `/settings/data/` to export JSON/Markdown or safely preview/import MindRepo JSON. See [data portability](docs/09-data-portability.md), [deployment](docs/10-production-deployment.md), and [backup/recovery](docs/11-backup-and-recovery.md). Production uses PostgreSQL, Gunicorn, Nginx, and HTTPS; `/health/` is a minimal liveness endpoint.
 
+## Private attachments
+
+Concepts can include private JPG, PNG, WEBP, GIF, PDF, TXT, and Markdown attachments up to 10 MB each. Files are stored under `MEDIA_ROOT` and served only by an authenticated owner-checked download view; do not configure Nginx to expose `MEDIA_ROOT` publicly. A complete production backup includes both PostgreSQL and the private attachment storage directory.
+
 ## Run Tests
 
 ```powershell

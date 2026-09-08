@@ -37,5 +37,6 @@
   <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}" defer></script>
   <script src="{% static 'js/app.js' %}" defer></script>
   {% if offline_knowledge_enabled %}<script type="module" src="{% static 'js/offline.js' %}"></script>{% endif %}
+  {% block extra_js %}{% endblock %}
 </body>
 </html>

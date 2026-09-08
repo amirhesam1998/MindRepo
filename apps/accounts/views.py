@@ -1,7 +1,9 @@
 import hashlib
+import ipaddress
 
 from django.contrib import messages
 from django.contrib.auth.views import LoginView, LogoutView
+from django.conf import settings
 from django.core.cache import cache
 
 from apps.core.i18n import translate_text
@@ -13,8 +15,18 @@ class MindRepoLoginView(LoginView):
     max_attempts = 5
     lock_seconds = 15 * 60
 
+    def client_ip(self):
+        remote = self.request.META.get("REMOTE_ADDR", "")
+        if remote not in settings.TRUSTED_PROXY_IPS:
+            return remote
+        candidate = self.request.META.get("HTTP_X_REAL_IP", "").strip()
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            return remote
+
     def throttle_key(self):
-        raw = f"{self.request.META.get('REMOTE_ADDR', '')}\0{self.request.POST.get('username', '').casefold()}"
+        raw = f"{self.client_ip()}\0{self.request.POST.get('username', '').strip().casefold()}"
         return f"login-throttle:{hashlib.sha256(raw.encode()).hexdigest()}"
 
     def post(self, request, *args, **kwargs):

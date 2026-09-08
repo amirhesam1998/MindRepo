@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -24,7 +24,7 @@ from .forms import (
     RelationFormSet,
     SnippetFormSet,
 )
-from .models import Category, Concept, ConceptRelation, Tag
+from .models import Category, Concept, ConceptAttachment, ConceptRelation, Tag
 from .portability import MAX_IMPORT_BYTES, apply_import, export_json, export_markdown_zip, validate_import
 
 
@@ -111,6 +111,7 @@ class ConceptDetailView(OwnedConceptMixin, DetailView):
                 "aliases",
                 "snippets",
                 "mistakes",
+                "attachments",
                 Prefetch("outgoing_relations", queryset=ConceptRelation.objects.select_related("target")),
             )
         )
@@ -160,6 +161,46 @@ class ConceptFormMixin(OwnedConceptMixin):
             ),
         }
 
+    @staticmethod
+    def validate_attachments(files):
+        allowed = {
+            ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"}, ".png": {"image/png"},
+            ".webp": {"image/webp"}, ".gif": {"image/gif"}, ".pdf": {"application/pdf"},
+            ".txt": {"text/plain"}, ".md": {"text/plain", "text/markdown"},
+        }
+        limit = 10 * 1024 * 1024
+        errors = []
+        for upload in files:
+            suffix = upload.name.lower().rsplit(".", 1)
+            suffix = f".{suffix[-1]}" if len(suffix) == 2 else ""
+            if suffix not in allowed or upload.size > limit:
+                errors.append(upload.name)
+                continue
+            if upload.content_type and upload.content_type.lower() not in allowed[suffix]:
+                errors.append(upload.name)
+        if errors:
+            raise ValidationError("Attachments must be JPG, PNG, WEBP, GIF, PDF, TXT, or Markdown files under 10 MB.")
+
+    def save_attachments(self, concept):
+        files = self.request.FILES.getlist("attachments")
+        self.validate_attachments(files)
+        removed = {value for value in self.request.POST.getlist("remove_attachment_ids") if value.isdigit()}
+        if removed:
+            ConceptAttachment.objects.filter(concept=concept, pk__in=removed).delete()
+        next_order = concept.attachments.count()
+        for upload in files:
+            ConceptAttachment.objects.create(
+                concept=concept,
+                file=upload,
+                original_name=upload.name[:255],
+                content_type=upload.content_type[:100] or "application/octet-stream",
+                file_size=upload.size,
+                sort_order=next_order,
+            )
+            next_order += 1
+        if files or removed:
+            concept.save(update_fields=["updated_at"])
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         instance = getattr(self, "object", None) or Concept(owner=self.request.user)
@@ -171,15 +212,20 @@ class ConceptFormMixin(OwnedConceptMixin):
         form = self.get_form()
         formsets = self.get_formsets(self.object or Concept(owner=request.user))
         if form.is_valid() and all(formset.is_valid() for formset in formsets.values()):
-            with transaction.atomic():
-                concept = form.save()
-                for formset in formsets.values():
-                    formset.instance = concept
-                    formset.save()
-                # Nested records are part of the offline Concept aggregate. Ensure a
-                # final aggregate version/change is visible after formset writes.
-                if any(formset.has_changed() for formset in formsets.values()):
-                    concept.save(update_fields=["updated_at"])
+            try:
+                with transaction.atomic():
+                    concept = form.save()
+                    for formset in formsets.values():
+                        formset.instance = concept
+                        formset.save()
+                    self.save_attachments(concept)
+                    # Nested records are part of the offline Concept aggregate. Ensure a
+                    # final aggregate version/change is visible after formset writes.
+                    if any(formset.has_changed() for formset in formsets.values()):
+                        concept.save(update_fields=["updated_at"])
+            except ValidationError as error:
+                form.add_error(None, error)
+                return self.render_to_response(self.get_context_data(form=form, formsets=formsets))
             self.object = concept
             messages.success(request, "Concept saved.")
             return HttpResponseRedirect(self.get_success_url())
@@ -219,6 +265,20 @@ class FavoriteToggleView(OwnedConceptMixin, View):
         if url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
             return HttpResponseRedirect(next_url)
         return HttpResponseRedirect(reverse("knowledge:concept_detail", args=[concept.pk, concept.slug]))
+
+
+class AttachmentDownloadView(OwnedConceptMixin, View):
+    def get(self, request, pk, slug, attachment_pk):
+        concept = self.get_object()
+        attachment = get_object_or_404(ConceptAttachment, pk=attachment_pk, concept=concept)
+        inline_types = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
+        response = FileResponse(attachment.file.open("rb"), content_type=attachment.content_type)
+        disposition = "inline" if request.GET.get("inline") == "1" and attachment.content_type in inline_types else "attachment"
+        filename = attachment.original_name.replace("\r", "").replace("\n", "").replace(chr(34), "")
+        response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class CategoryListView(LoginRequiredMixin, ListView):

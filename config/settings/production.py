@@ -9,6 +9,7 @@ from .base import *  # noqa: F403
 
 DEBUG = False
 PWA_ENABLED = env_bool("PWA_ENABLED", True)  # noqa: F405
+TRUSTED_PROXY_IPS = env_list("TRUSTED_PROXY_IPS", "127.0.0.1,::1")  # noqa: F405
 
 if SECRET_KEY in {"django-insecure-development-key", "change-me-before-use"}:  # noqa: F405
     raise ImproperlyConfigured("SECRET_KEY must be set in production.")

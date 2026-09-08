@@ -1,5 +1,7 @@
+import json
+
 from django import forms
-from django.forms import inlineformset_factory
+from django.forms import BaseInlineFormSet, inlineformset_factory
 
 from apps.core.i18n import translate_text
 
@@ -13,6 +15,17 @@ FORM_LABELS = {
     "language": "Language", "code": "Code", "explanation": "Explanation", "sort_order": "Sort order",
     "correction": "Correction", "target": "Related concept", "relation_type": "Relation type", "DELETE": "Delete",
 }
+
+CODE_LANGUAGE_CHOICES = [
+    ("plaintext", "Plain text"), ("python", "Python"), ("php", "PHP"),
+    ("javascript", "JavaScript"), ("typescript", "TypeScript"), ("html", "HTML"),
+    ("css", "CSS"), ("scss", "SCSS"), ("sql", "SQL"), ("bash", "Bash"),
+    ("shell", "Shell"), ("json", "JSON"), ("yaml", "YAML"), ("xml", "XML"),
+    ("java", "Java"), ("c", "C"), ("cpp", "C++"), ("csharp", "C#"),
+    ("go", "Go"), ("rust", "Rust"), ("ruby", "Ruby"), ("swift", "Swift"),
+    ("kotlin", "Kotlin"), ("dart", "Dart"), ("dockerfile", "Dockerfile"),
+    ("markdown", "Markdown"),
+]
 
 
 class LocalizedModelForm(forms.ModelForm):
@@ -47,7 +60,7 @@ class CategoryForm(LocalizedModelForm):
 
 
 class ConceptForm(LocalizedModelForm):
-    tag_names = forms.CharField(required=False, help_text="Separate tags with commas.")
+    tag_names = forms.CharField(required=False, widget=forms.HiddenInput())
 
     class Meta:
         model = Concept
@@ -62,10 +75,40 @@ class ConceptForm(LocalizedModelForm):
         super().__init__(*args, **kwargs)
         self.user = user
         self.instance.owner = user
+        categories = list(Category.objects.filter(owner=user).order_by("title"))
         self.fields["category"].queryset = Category.objects.filter(owner=user)
-        self.fields["tag_names"].help_text = translate_text("Separate tags with commas.")
+        by_parent = {}
+        for category in categories:
+            by_parent.setdefault(category.parent_id, []).append(category)
+        choices = [("", translate_text("Uncategorized"))]
+
+        def add_children(parent_id, depth=0):
+            for category in by_parent.get(parent_id, []):
+                choices.append((category.pk, f"{'— ' * depth}{category.title}"))
+                add_children(category.pk, depth + 1)
+
+        add_children(None)
+        self.fields["category"].choices = choices
+        self.fields["is_favorite"].widget.attrs["class"] = "favorite-input"
         if self.instance.pk:
-            self.fields["tag_names"].initial = ", ".join(self.instance.tags.values_list("name", flat=True))
+            self.fields["tag_names"].initial = json.dumps(list(self.instance.tags.values_list("name", flat=True)))
+
+    def clean_tag_names(self):
+        raw = self.cleaned_data["tag_names"].strip()
+        if not raw:
+            return []
+        try:
+            values = json.loads(raw) if raw.startswith("[") else raw.split(",")
+        except json.JSONDecodeError:
+            raise forms.ValidationError("Tags could not be read.")
+        if not isinstance(values, list):
+            raise forms.ValidationError("Tags could not be read.")
+        unique = {}
+        for value in values:
+            name = " ".join(str(value).split())
+            if name:
+                unique.setdefault(normalized(name), name)
+        return list(unique.values())
 
     def save(self, commit=True):
         concept = super().save(commit=False)
@@ -80,10 +123,7 @@ class ConceptForm(LocalizedModelForm):
 
     def save_tags(self, concept):
         tags = []
-        for value in self.cleaned_data["tag_names"].split(","):
-            name = " ".join(value.split())
-            if not name:
-                continue
+        for name in self.cleaned_data["tag_names"]:
             tag, _ = Tag.objects.get_or_create(
                 owner=self.user, normalized_name=normalized(name), defaults={"name": name}
             )
@@ -101,13 +141,29 @@ class SnippetForm(LocalizedModelForm):
     class Meta:
         model = CodeSnippet
         fields = ["title", "language", "code", "explanation", "sort_order"]
-        widgets = {"code": forms.Textarea(attrs={"rows": 7, "class": "ltr"})}
+        widgets = {
+            "code": forms.Textarea(attrs={"rows": 7, "class": "ltr code-source"}),
+            "sort_order": forms.HiddenInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        current = self.instance.language or "plaintext"
+        choices = CODE_LANGUAGE_CHOICES[:]
+        if current not in {value for value, _ in choices}:
+            choices.append((current, f"Legacy: {current}"))
+        self.fields["language"] = forms.ChoiceField(
+            choices=choices,
+            label=translate_text("Language"),
+            widget=forms.Select(attrs={"class": "form-select"}),
+        )
 
 
 class MistakeForm(LocalizedModelForm):
     class Meta:
         model = CommonMistake
         fields = ["title", "description", "correction", "sort_order"]
+        widgets = {"sort_order": forms.HiddenInput()}
 
 
 class RelationForm(LocalizedModelForm):
@@ -120,7 +176,13 @@ class RelationForm(LocalizedModelForm):
         self.fields["target"].queryset = Concept.objects.filter(owner=user).exclude(pk=self.instance.source_id)
 
 
-AliasFormSet = inlineformset_factory(Concept, ConceptAlias, form=AliasForm, extra=2, can_delete=True)
-SnippetFormSet = inlineformset_factory(Concept, CodeSnippet, form=SnippetForm, extra=1, can_delete=True)
-MistakeFormSet = inlineformset_factory(Concept, CommonMistake, form=MistakeForm, extra=1, can_delete=True)
-RelationFormSet = inlineformset_factory(Concept, ConceptRelation, fk_name="source", form=RelationForm, extra=2, can_delete=True)
+class EditorInlineFormSet(BaseInlineFormSet):
+    def add_fields(self, form, index):
+        super().add_fields(form, index)
+        form.fields["DELETE"].widget = forms.HiddenInput()
+
+
+AliasFormSet = inlineformset_factory(Concept, ConceptAlias, form=AliasForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+SnippetFormSet = inlineformset_factory(Concept, CodeSnippet, form=SnippetForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+MistakeFormSet = inlineformset_factory(Concept, CommonMistake, form=MistakeForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+RelationFormSet = inlineformset_factory(Concept, ConceptRelation, fk_name="source", form=RelationForm, formset=EditorInlineFormSet, extra=0, can_delete=True)

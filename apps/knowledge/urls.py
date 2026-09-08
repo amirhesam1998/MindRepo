@@ -12,6 +12,7 @@ urlpatterns = [
     path("library/<int:pk>/<str:slug>/edit/", views.ConceptUpdateView.as_view(), name="concept_edit"),
     path("library/<int:pk>/<str:slug>/delete/", views.ConceptDeleteView.as_view(), name="concept_delete"),
     path("library/<int:pk>/<str:slug>/favorite/", views.FavoriteToggleView.as_view(), name="concept_favorite"),
+    path("library/<int:pk>/<str:slug>/attachments/<int:attachment_pk>/", views.AttachmentDownloadView.as_view(), name="attachment_download"),
     path("library/categories/", views.CategoryListView.as_view(), name="category_list"),
     path("library/categories/new/", views.CategoryCreateView.as_view(), name="category_create"),
     path("library/categories/<int:pk>/edit/", views.CategoryUpdateView.as_view(), name="category_edit"),

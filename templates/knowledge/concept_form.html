@@ -1,1 +1,122 @@
-{% extends "layouts/app.html" %}{% load mindrepo_i18n %}{% block title %}{% if object %}{{ "Edit concept"|tr }}{% else %}{{ "New Concept"|tr }}{% endif %} · MindRepo{% endblock %}{% block app_content %}<div class="page-container knowledge-page form-page"><header class="page-header"><div><p class="page-context">{{ "Knowledge library"|tr }}</p><h1>{% if object %}{{ "Edit concept"|tr }}{% else %}{{ "Capture a concept"|tr }}{% endif %}</h1><p>{% if object %}{{ "Keep the quick definition sharp; add depth only when it helps."|tr }}{% else %}{{ "A title and quick definition are enough to save the idea now."|tr }}{% endif %}</p></div></header><form method="post" class="knowledge-form" data-submit-state>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}<section class="form-section capture-panel"><h2>{{ "Quick capture"|tr }}</h2><div class="field-wrap">{{ form.title.label_tag }}{{ form.title }}{{ form.title.errors }}</div><div class="field-wrap">{{ form.quick_definition.label_tag }}{{ form.quick_definition }}{{ form.quick_definition.errors }}</div></section><details class="form-section nested-section" {% if form.category.errors or form.difficulty.errors or form.tag_names.errors %}open{% endif %}><summary>{{ "Organization"|tr }}</summary><div class="field-wrap">{{ form.category.label_tag }}{{ form.category }}{{ form.category.errors }}</div><div class="field-wrap">{{ form.difficulty.label_tag }}{{ form.difficulty }}{{ form.difficulty.errors }}</div><div class="field-wrap">{{ form.tag_names.label_tag }}{{ form.tag_names }}<small>{{ form.tag_names.help_text }}</small>{{ form.tag_names.errors }}</div><div class="field-wrap">{{ form.is_favorite }}{{ form.is_favorite.label_tag }}{{ form.is_favorite.errors }}</div></details><details class="form-section nested-section" {% if form.simple_explanation.errors or form.deep_dive.errors %}open{% endif %}><summary>{{ "Explanations"|tr }}</summary><div class="field-wrap">{{ form.simple_explanation.label_tag }}{{ form.simple_explanation }}{{ form.simple_explanation.errors }}</div><div class="field-wrap">{{ form.deep_dive.label_tag }}{{ form.deep_dive }}{{ form.deep_dive.errors }}</div></details>{% for name, formset in formsets.items %}<details class="form-section nested-section" data-formset {% if formset.errors %}open{% endif %}><summary>{% if name == 'aliases' %}{{ "Aliases"|tr }}{% elif name == 'snippets' %}{{ "Code examples"|tr }}{% elif name == 'mistakes' %}{{ "Common mistakes"|tr }}{% else %}{{ "Related concepts"|tr }}{% endif %}</summary>{{ formset.management_form }}<div data-formset-body>{% for nested in formset %}<fieldset class="nested-row">{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{% for field in nested.visible_fields %}<div class="field-wrap">{{ field.label_tag }}{{ field }}{{ field.errors }}</div>{% endfor %}</fieldset>{% endfor %}</div><template data-empty-form><fieldset class="nested-row">{% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{% for field in formset.empty_form.visible_fields %}<div class="field-wrap">{{ field.label_tag }}{{ field }}</div>{% endfor %}</fieldset></template><button class="btn btn-sm btn-outline-secondary" type="button" data-add-form>{{ "Add another"|tr }}</button></details>{% endfor %}<div class="form-actions"><button class="btn btn-primary" type="submit" data-save-button>{{ "Save concept"|tr }}</button><a class="btn btn-outline-secondary" href="{% if object %}{% url 'knowledge:concept_detail' object.pk object.slug %}{% else %}{% url 'knowledge:library' %}{% endif %}">{{ "Cancel"|tr }}</a></div></form></div>{% endblock %}
+{% extends "layouts/app.html" %}
+{% load static mindrepo_i18n %}
+{% block title %}{% if object %}{{ "Edit"|tr }} {{ object.title }}{% else %}{{ "New concept"|tr }}{% endif %} · MindRepo{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'css/concept-editor.css' %}">
+{% endblock %}
+{% block app_content %}
+<main class="page-container concept-editor-page">
+  <header class="editor-page-header">
+    <div>
+      <a class="back-link" href="{% if object %}{% url 'knowledge:concept_detail' object.pk object.slug %}{% else %}{% url 'knowledge:library' %}{% endif %}">← {{ "Back"|tr }}</a>
+      <h1 dir="auto">{% if object %}{{ "Edit"|tr }} {{ object.title }}{% else %}{{ "New concept"|tr }}{% endif %}</h1>
+      <p>{% if object %}{{ "Keep the useful details close to the idea."|tr }}{% else %}{{ "Capture the idea quickly. Add details only when useful."|tr }}{% endif %}</p>
+    </div>
+  </header>
+
+  <form method="post" enctype="multipart/form-data" class="concept-editor" data-concept-editor novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="editor-errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="editor-capture-card">
+      <div class="editor-eyebrow">{{ "Quick capture"|tr }}</div>
+      <div class="editor-field {% if form.title.errors %}has-error{% endif %}">
+        <label for="{{ form.title.id_for_label }}">{{ form.title.label }} <span aria-hidden="true">*</span></label>
+        {{ form.title }}{{ form.title.errors }}
+      </div>
+      <div class="editor-field {% if form.quick_definition.errors %}has-error{% endif %}">
+        <label for="{{ form.quick_definition.id_for_label }}">{{ form.quick_definition.label }} <span aria-hidden="true">*</span></label>
+        {{ form.quick_definition }}{{ form.quick_definition.errors }}
+      </div>
+    </section>
+
+    <section class="editor-section is-open" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="true">
+        <span><strong>⌘ {{ "Organization"|tr }}</strong><small>{{ "Place and prioritize this concept."|tr }}</small></span><span class="editor-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="editor-section__body">
+        <div class="editor-grid organization-grid">
+          <div class="editor-field">{{ form.category.label_tag }}{{ form.category }}{{ form.category.errors }}</div>
+          <div class="editor-field">{{ form.difficulty.label_tag }}{{ form.difficulty }}{{ form.difficulty.errors }}</div>
+          <div class="editor-field editor-tags-field">
+            <label for="tag-editor-input">{{ "Tags"|tr }}</label>{{ form.tag_names }}
+            <div class="tag-editor" data-tag-editor>
+              <div class="tag-editor__chips" data-tag-chips></div>
+              <input id="tag-editor-input" type="text" autocomplete="off" dir="auto" placeholder="{{ 'Type a tag and press Enter'|tr }}" data-tag-input>
+            </div>
+            <small>{{ "Type a tag and press Enter"|tr }}</small>{{ form.tag_names.errors }}
+          </div>
+          <div class="editor-field favorite-field">
+            <span class="editor-label">{{ "Favorite"|tr }}</span>
+            {{ form.is_favorite }}
+            <label class="favorite-toggle" for="{{ form.is_favorite.id_for_label }}" data-favorite-label><span aria-hidden="true">☆</span> {{ "Add to favorites"|tr }}</label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="editor-section {% if form.simple_explanation.errors or form.deep_dive.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if form.simple_explanation.errors or form.deep_dive.errors %}true{% else %}false{% endif %}">
+        <span><strong>☷ {{ "Explanations"|tr }}</strong><small>{{ "Add context when quick recall is not enough."|tr }}</small></span><span class="editor-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="editor-section__body">
+        <div class="editor-field">{{ form.simple_explanation.label_tag }}{{ form.simple_explanation }}{{ form.simple_explanation.errors }}</div>
+        <div class="editor-field">{{ form.deep_dive.label_tag }}{{ form.deep_dive }}{{ form.deep_dive.errors }}</div>
+      </div>
+    </section>
+
+    <section class="editor-section {% if formsets.aliases.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.aliases.errors %}true{% else %}false{% endif %}">
+        <span><strong>≈ {{ "Aliases"|tr }}</strong><small>{{ "Other names you may remember."|tr }}</small></span><span class="section-count">{{ formsets.aliases.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="editor-section__body">
+        <div class="inline-formset alias-formset" data-formset data-prefix="{{ formsets.aliases.prefix }}" data-sortable="false">
+          {{ formsets.aliases.management_form }}
+          <div class="inline-formset__items" data-formset-items>
+            {% for nested in formsets.aliases %}
+              <div class="alias-row" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.DELETE }}{{ nested.value }}<button type="button" class="editor-icon-button" data-remove-row aria-label="{{ 'Remove alias'|tr }}">×</button>{{ nested.value.errors }}</div>
+            {% empty %}<p class="editor-empty" data-empty-state>{{ "No aliases yet."|tr }}</p>{% endfor %}
+          </div>
+          <template data-empty-form><div class="alias-row" data-formset-row>{% for hidden in formsets.aliases.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.aliases.empty_form.DELETE }}{{ formsets.aliases.empty_form.value }}<button type="button" class="editor-icon-button" data-remove-row aria-label="{{ 'Remove alias'|tr }}">×</button></div></template>
+          <button type="button" class="editor-add-button" data-add-row>+ {{ "Add alias"|tr }}</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="editor-section {% if object.attachments.all %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if object.attachments.all %}true{% else %}false{% endif %}">
+        <span><strong>▣ {{ "Attachments"|tr }}</strong><small>{{ "Private images, PDFs, and text files. Max 10 MB each."|tr }}</small></span><span class="section-count">{% if object %}{{ object.attachments.count }}{% else %}0{% endif %}</span><span class="editor-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="editor-section__body">
+        <input class="visually-hidden" type="file" id="attachment-input" name="attachments" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.md" data-attachment-input>
+        <label class="attachment-dropzone" for="attachment-input" data-attachment-dropzone tabindex="0"><span class="attachment-dropzone__icon">⇧</span><strong>{{ "Drop files here"|tr }}</strong><span>{{ "or click to browse"|tr }}</span><small>{{ "Images, PDF, text, Markdown — max 10 MB"|tr }}</small></label>
+        <div class="attachment-list" data-attachment-preview></div>
+        {% if object and object.attachments.all %}<div class="attachment-list" data-existing-attachments>{% for attachment in object.attachments.all %}<article class="attachment-card" data-existing-attachment data-attachment-id="{{ attachment.pk }}">{% if attachment.is_image %}<img src="{% url 'knowledge:attachment_download' object.pk object.slug attachment.pk %}?inline=1" alt="" loading="lazy">{% else %}<span class="attachment-file-icon">{% if attachment.content_type == 'application/pdf' %}PDF{% else %}FILE{% endif %}</span>{% endif %}<div><strong dir="auto">{{ attachment.original_name }}</strong><small>{{ attachment.file_size|filesizeformat }}</small></div><a class="btn btn-sm btn-outline-secondary" href="{% url 'knowledge:attachment_download' object.pk object.slug attachment.pk %}">{{ "Download"|tr }}</a><button class="editor-icon-button" type="button" data-remove-attachment aria-label="{{ 'Remove attachment'|tr }}">×</button></article>{% endfor %}</div>{% endif %}
+        <div data-removed-attachments></div>
+      </div>
+    </section>
+
+    <section class="editor-section {% if formsets.snippets.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.snippets.errors %}true{% else %}false{% endif %}"><span><strong>&lt;/&gt; {{ "Code examples"|tr }}</strong><small>{{ "Keep practical examples with the concept."|tr }}</small></span><span class="section-count">{{ formsets.snippets.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body"><div class="inline-formset" data-formset data-prefix="{{ formsets.snippets.prefix }}" data-sortable="true">{{ formsets.snippets.management_form }}<div class="inline-formset__items" data-formset-items>{% for nested in formsets.snippets %}<article class="nested-editor-card" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.sort_order }}{{ nested.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Code example"|tr }}</strong><span class="nested-actions"><button type="button" class="editor-icon-button" data-move-up aria-label="{{ 'Move up'|tr }}">↑</button><button type="button" class="editor-icon-button" data-move-down aria-label="{{ 'Move down'|tr }}">↓</button><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></span></header><div class="editor-grid snippet-grid"><div class="editor-field">{{ nested.title.label_tag }}{{ nested.title }}{{ nested.title.errors }}</div><div class="editor-field">{{ nested.language.label_tag }}{{ nested.language }}{{ nested.language.errors }}</div></div><div class="editor-field code-editor-field"><label>{{ "Code"|tr }}</label>{{ nested.code }}<div class="ace-editor" data-ace-editor aria-label="{{ 'Code editor'|tr }}"></div>{{ nested.code.errors }}</div><div class="editor-field">{{ nested.explanation.label_tag }}{{ nested.explanation }}{{ nested.explanation.errors }}</div></article>{% empty %}<p class="editor-empty" data-empty-state>{{ "No code examples yet."|tr }}</p>{% endfor %}</div><template data-empty-form><article class="nested-editor-card" data-formset-row>{% for hidden in formsets.snippets.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.snippets.empty_form.sort_order }}{{ formsets.snippets.empty_form.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Code example"|tr }}</strong><span class="nested-actions"><button type="button" class="editor-icon-button" data-move-up aria-label="{{ 'Move up'|tr }}">↑</button><button type="button" class="editor-icon-button" data-move-down aria-label="{{ 'Move down'|tr }}">↓</button><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></span></header><div class="editor-grid snippet-grid"><div class="editor-field">{{ formsets.snippets.empty_form.title.label_tag }}{{ formsets.snippets.empty_form.title }}</div><div class="editor-field">{{ formsets.snippets.empty_form.language.label_tag }}{{ formsets.snippets.empty_form.language }}</div></div><div class="editor-field code-editor-field"><label>{{ "Code"|tr }}</label>{{ formsets.snippets.empty_form.code }}<div class="ace-editor" data-ace-editor aria-label="{{ 'Code editor'|tr }}"></div></div><div class="editor-field">{{ formsets.snippets.empty_form.explanation.label_tag }}{{ formsets.snippets.empty_form.explanation }}</div></article></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add code example"|tr }}</button></div></div>
+    </section>
+
+    <section class="editor-section {% if formsets.mistakes.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.mistakes.errors %}true{% else %}false{% endif %}"><span><strong>! {{ "Common mistakes"|tr }}</strong><small>{{ "Capture traps and the better approach."|tr }}</small></span><span class="section-count">{{ formsets.mistakes.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body"><div class="inline-formset" data-formset data-prefix="{{ formsets.mistakes.prefix }}" data-sortable="true">{{ formsets.mistakes.management_form }}<div class="inline-formset__items" data-formset-items>{% for nested in formsets.mistakes %}<article class="nested-editor-card" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.sort_order }}{{ nested.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Common mistake"|tr }}</strong><span class="nested-actions"><button type="button" class="editor-icon-button" data-move-up aria-label="{{ 'Move up'|tr }}">↑</button><button type="button" class="editor-icon-button" data-move-down aria-label="{{ 'Move down'|tr }}">↓</button><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></span></header><div class="editor-field">{{ nested.title.label_tag }}{{ nested.title }}{{ nested.title.errors }}</div><div class="editor-field">{{ nested.description.label_tag }}{{ nested.description }}{{ nested.description.errors }}</div><div class="editor-field">{{ nested.correction.label_tag }}{{ nested.correction }}{{ nested.correction.errors }}</div></article>{% empty %}<p class="editor-empty" data-empty-state>{{ "No common mistakes yet."|tr }}</p>{% endfor %}</div><template data-empty-form><article class="nested-editor-card" data-formset-row>{% for hidden in formsets.mistakes.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.mistakes.empty_form.sort_order }}{{ formsets.mistakes.empty_form.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Common mistake"|tr }}</strong><span class="nested-actions"><button type="button" class="editor-icon-button" data-move-up aria-label="{{ 'Move up'|tr }}">↑</button><button type="button" class="editor-icon-button" data-move-down aria-label="{{ 'Move down'|tr }}">↓</button><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></span></header><div class="editor-field">{{ formsets.mistakes.empty_form.title.label_tag }}{{ formsets.mistakes.empty_form.title }}</div><div class="editor-field">{{ formsets.mistakes.empty_form.description.label_tag }}{{ formsets.mistakes.empty_form.description }}</div><div class="editor-field">{{ formsets.mistakes.empty_form.correction.label_tag }}{{ formsets.mistakes.empty_form.correction }}</div></article></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add common mistake"|tr }}</button></div></div>
+    </section>
+
+    <section class="editor-section {% if formsets.relations.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.relations.errors %}true{% else %}false{% endif %}"><span><strong>↗ {{ "Related concepts"|tr }}</strong><small>{{ "Link ideas that help explain each other."|tr }}</small></span><span class="section-count">{{ formsets.relations.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body"><div class="inline-formset" data-formset data-prefix="{{ formsets.relations.prefix }}" data-sortable="false">{{ formsets.relations.management_form }}<div class="inline-formset__items" data-formset-items>{% for nested in formsets.relations %}<div class="relation-row" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.DELETE }}<div class="editor-field">{{ nested.target.label_tag }}{{ nested.target }}{{ nested.target.errors }}</div><div class="editor-field">{{ nested.relation_type.label_tag }}{{ nested.relation_type }}{{ nested.relation_type.errors }}</div><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></div>{% empty %}<p class="editor-empty" data-empty-state>{{ "No related concepts yet."|tr }}</p>{% endfor %}</div><template data-empty-form><div class="relation-row" data-formset-row>{% for hidden in formsets.relations.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.relations.empty_form.DELETE }}<div class="editor-field">{{ formsets.relations.empty_form.target.label_tag }}{{ formsets.relations.empty_form.target }}</div><div class="editor-field">{{ formsets.relations.empty_form.relation_type.label_tag }}{{ formsets.relations.empty_form.relation_type }}</div><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></div></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add related concept"|tr }}</button></div></div>
+    </section>
+
+    <div class="editor-savebar"><a class="btn btn-outline-secondary" href="{% if object %}{% url 'knowledge:concept_detail' object.pk object.slug %}{% else %}{% url 'knowledge:library' %}{% endif %}">{{ "Cancel"|tr }}</a><button class="btn btn-primary" type="submit" data-save-button>{{ "Save concept"|tr }}</button></div>
+  </form>
+</main>
+{% endblock %}
+{% block extra_js %}
+  <script src="{% static 'vendor/ace/ace.js' %}" data-ace-base="{% static 'vendor/ace' %}"></script>
+  <script src="{% static 'vendor/sortable/sortable.min.js' %}"></script>
+  <script src="{% static 'js/concept-editor.js' %}" defer></script>
+{% endblock %}

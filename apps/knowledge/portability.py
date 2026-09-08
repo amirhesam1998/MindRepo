@@ -5,6 +5,7 @@ import json
 import re
 import zipfile
 from collections import Counter
+from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -29,7 +30,7 @@ def _date(value):
 
 def _concepts(user):
     return Concept.objects.filter(owner=user).select_related("category", "review_state").prefetch_related(
-        "tags", "aliases", "snippets", "mistakes", "outgoing_relations__target", "review_logs"
+        "tags", "aliases", "snippets", "mistakes", "attachments", "outgoing_relations__target", "review_logs"
     )
 
 
@@ -39,7 +40,7 @@ def build_export(user, *, include_reviews=True):
     for category in Category.objects.filter(owner=user).select_related("parent"):
         data["categories"].append({"id": str(category.pk), "title": category.title, "description": category.description, "parent_id": str(category.parent_id) if category.parent_id else None})
     for concept in concepts:
-        row = {"id": str(concept.pk), "title": concept.title, "slug": concept.slug, "quick_definition": concept.quick_definition, "simple_explanation": concept.simple_explanation, "deep_dive": concept.deep_dive, "difficulty": concept.difficulty, "is_favorite": concept.is_favorite, "category_id": str(concept.category_id) if concept.category_id else None, "tags": [tag.name for tag in concept.tags.all()], "aliases": [item.value for item in concept.aliases.all()], "snippets": [{"title": item.title, "language": item.language, "code": item.code, "explanation": item.explanation, "sort_order": item.sort_order} for item in concept.snippets.all()], "mistakes": [{"title": item.title, "description": item.description, "correction": item.correction, "sort_order": item.sort_order} for item in concept.mistakes.all()], "relations": [{"target_id": str(item.target_id), "relation_type": item.relation_type} for item in concept.outgoing_relations.all()], "created_at": _date(concept.created_at), "updated_at": _date(concept.updated_at)}
+        row = {"id": str(concept.pk), "title": concept.title, "slug": concept.slug, "quick_definition": concept.quick_definition, "simple_explanation": concept.simple_explanation, "deep_dive": concept.deep_dive, "difficulty": concept.difficulty, "is_favorite": concept.is_favorite, "category_id": str(concept.category_id) if concept.category_id else None, "tags": [tag.name for tag in concept.tags.all()], "aliases": [item.value for item in concept.aliases.all()], "snippets": [{"title": item.title, "language": item.language, "code": item.code, "explanation": item.explanation, "sort_order": item.sort_order} for item in concept.snippets.all()], "mistakes": [{"title": item.title, "description": item.description, "correction": item.correction, "sort_order": item.sort_order} for item in concept.mistakes.all()], "attachments": [{"name": item.original_name, "content_type": item.content_type, "file_size": item.file_size} for item in concept.attachments.all()], "relations": [{"target_id": str(item.target_id), "relation_type": item.relation_type} for item in concept.outgoing_relations.all()], "created_at": _date(concept.created_at), "updated_at": _date(concept.updated_at)}
         if include_reviews:
             state = concept.review_state
             row["review_state"] = {"status": state.status, "due_at": _date(state.due_at), "last_reviewed_at": _date(state.last_reviewed_at), "review_count": state.review_count, "lapse_count": state.lapse_count, "success_streak": state.success_streak, "interval_days": state.interval_days, "version": state.version, "scheduler_data": state.scheduler_data}
@@ -57,8 +58,15 @@ def safe_filename(value, fallback="concept"):
     return re.sub(r'[<>:"/\\|?*]+', "-", value).strip(". ")[:100] or fallback
 
 
+def safe_attachment_filename(value):
+    suffix = Path(value).suffix.lower()
+    return f"{safe_filename(Path(value).stem, 'attachment')}{suffix}"
+
+
 def export_markdown_zip(user):
+    concepts = list(_concepts(user))
     payload = build_export(user, include_reviews=False)
+    concept_attachments = {str(concept.pk): list(concept.attachments.all()) for concept in concepts}
     used = Counter()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -89,6 +97,24 @@ def export_markdown_zip(user):
             if concept["relations"]:
                 lines.extend(["## Related Concepts", ""])
                 lines.extend([f"- {concept_titles.get(item['target_id'], item['target_id'])} ({item['relation_type']})" for item in concept["relations"]])
+                lines.append("")
+            attachments = concept_attachments.get(concept["id"], [])
+            if attachments:
+                attachment_dir = f"{base}{suffix}-attachments"
+                lines.extend(["## Attachments", ""])
+                attachment_names = Counter()
+                for attachment in attachments:
+                    attachment_name = safe_attachment_filename(attachment.original_name)
+                    attachment_names[attachment_name] += 1
+                    if attachment_names[attachment_name] > 1:
+                        stem, dot, extension = attachment_name.rpartition(".")
+                        attachment_name = f"{stem or attachment_name}-{attachment_names[attachment_name]}{dot}{extension}" if dot else f"{attachment_name}-{attachment_names[attachment_name]}"
+                    lines.append(f"- [{attachment.original_name}]({attachment_dir}/{attachment_name})")
+                    attachment.file.open("rb")
+                    try:
+                        archive.writestr(f"MindRepo/{folder}/{attachment_dir}/{attachment_name}", attachment.file.read())
+                    finally:
+                        attachment.file.close()
                 lines.append("")
             archive.writestr(f"MindRepo/{folder}/{base}{suffix}.md", "\n".join(lines))
     return buffer.getvalue()

@@ -10,6 +10,7 @@ from apps.knowledge.models import Concept
 from .models import OfflineChange
 
 
+@override_settings(OFFLINE_KNOWLEDGE_ENABLED=True)
 class OfflineSyncTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="offline", password="password-123")

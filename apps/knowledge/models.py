@@ -1,3 +1,6 @@
+from pathlib import Path
+from uuid import uuid4
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
@@ -8,6 +11,12 @@ from django.utils.text import slugify
 
 def normalized(value: str) -> str:
     return " ".join(value.split()).casefold()
+
+
+def concept_attachment_path(instance, filename: str) -> str:
+    """Keep private uploads independent from a user-controlled filename."""
+    suffix = Path(filename).suffix.lower()
+    return f"private/concepts/{instance.concept_id}/{uuid4().hex}{suffix}"
 
 
 class OwnedSlugModel(models.Model):
@@ -217,3 +226,23 @@ class ConceptRelation(models.Model):
             raise ValidationError({"target": "A concept cannot relate to itself."})
         if self.source_id and self.target_id and self.source.owner_id != self.target.owner_id:
             raise ValidationError({"target": "Choose one of your own concepts."})
+
+
+class ConceptAttachment(models.Model):
+    concept = models.ForeignKey(Concept, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to=concept_attachment_path)
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    file_size = models.PositiveIntegerField()
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+
+    def __str__(self):
+        return self.original_name
+
+    @property
+    def is_image(self):
+        return self.content_type in {"image/jpeg", "image/png", "image/webp", "image/gif"}

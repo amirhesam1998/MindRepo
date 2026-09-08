@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptRelation, Tag
+from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptAttachment, ConceptRelation, Tag
 
 
 @admin.register(Category)
@@ -28,3 +28,9 @@ admin.site.register(ConceptAlias)
 admin.site.register(CodeSnippet)
 admin.site.register(CommonMistake)
 admin.site.register(ConceptRelation)
+
+
+@admin.register(ConceptAttachment)
+class ConceptAttachmentAdmin(admin.ModelAdmin):
+    list_display = ("original_name", "concept", "content_type", "file_size", "created_at")
+    readonly_fields = ("original_name", "content_type", "file_size", "created_at")

@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import resolve, reverse
 
 from apps.core.views import DashboardView
@@ -78,3 +78,11 @@ class AuthenticationTests(TestCase):
             self.client.post(reverse("accounts:login"), {"username": self.user.username, "password": "wrong"})
         response = self.client.post(reverse("accounts:login"), {"username": self.user.username, "password": self.password})
         self.assertContains(response, "Please wait a few minutes")
+
+    @override_settings(TRUSTED_PROXY_IPS=["127.0.0.1"])
+    def test_login_throttle_uses_x_real_ip_only_from_a_trusted_proxy(self):
+        view = MindRepoLoginView()
+        view.request = self.client.post(reverse("accounts:login"), REMOTE_ADDR="127.0.0.1", HTTP_X_REAL_IP="203.0.113.10").wsgi_request
+        self.assertEqual(view.client_ip(), "203.0.113.10")
+        view.request = self.client.post(reverse("accounts:login"), REMOTE_ADDR="198.51.100.2", HTTP_X_REAL_IP="203.0.113.10").wsgi_request
+        self.assertEqual(view.client_ip(), "198.51.100.2")
