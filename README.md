@@ -1,6 +1,6 @@
 # MindRepo
 
-MindRepo is a private developer knowledge base built for fast discovery, recall, and future spaced-repetition reviews. It is a personal knowledge system, not a blogging platform.
+MindRepo is a private developer knowledge and recall system. It combines fast capture with structured long-form notes, references, revision history, and independent study cards; it is not a blogging platform.
 
 ## Status
 
@@ -84,9 +84,13 @@ Production enables the PWA service worker by default and requires HTTPS. Local d
 
 Offline Knowledge is an explicit per-browser opt-in at `/settings/offline/`. It stores a structured private concept replica in IndexedDB for offline reading, local search, favorites, and Random Recall. Enable it only on a trusted device: IndexedDB is not encrypted by MindRepo. Logout and Clear Offline Data remove the local replica and queued changes. It is disabled by default in production with `OFFLINE_KNOWLEDGE_ENABLED=False` until the target-browser flow has been verified. See [docs/08-offline-and-sync.md](docs/08-offline-and-sync.md).
 
+## Advanced knowledge
+
+Concepts keep fast recall fields while supporting ordered Markdown sections, safe tables and code, self-hosted Mermaid diagrams, sources, technology/version context, freshness metadata, private attachments, and immutable content revisions. See [the advanced knowledge model](docs/13-advanced-knowledge-model.md).
+
 ## Reviews
 
-Every concept receives one review state automatically. Open **Review** to work through overdue cards first, then currently due cards, then up to ten new concepts per day. The internal `mindrepo-v1` scheduler is deterministic and isolated from the UI so it can later be replaced with SM-2 or FSRS. See [docs/06-review-system.md](docs/06-review-system.md) for the current rules and limitations.
+Every concept receives a persistent default recall card, and optional custom cards have independent schedules. Open **Review** to work through overdue cards first, then currently due cards, then up to ten new cards per day. Archived custom cards preserve their schedule and history but leave the queue and mastery calculation. See [docs/06-review-system.md](docs/06-review-system.md).
 
 ## Discovery
 

@@ -54,7 +54,7 @@ class PwaDeliveryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response["Content-Type"].startswith("application/javascript"))
         self.assertEqual(response["Service-Worker-Allowed"], "/")
-        self.assertContains(response, 'const CACHE_NAME = "mindrepo-static-v3";')
+        self.assertContains(response, 'const CACHE_NAME = "mindrepo-static-v4";')
         self.assertContains(response, "/static/js/offline.js")
         self.assertContains(response, 'if (event.request.mode === "navigate")')
         self.assertContains(response, 'if (!STATIC_ASSETS.includes(url.pathname)) return;')

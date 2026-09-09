@@ -13,6 +13,9 @@ from django.urls import reverse
 from .forms import ConceptForm
 from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptAttachment, ConceptRelation, Tag
 from .portability import apply_import, build_export, export_markdown_zip, validate_import
+from .markdown import render_markdown
+from .models import ConceptSection, ConceptSource
+from apps.reviews.models import ReviewCard, ReviewLog
 
 
 class KnowledgeTestCase(TestCase):
@@ -302,6 +305,16 @@ class AttachmentTests(ConceptTests):
 
 
 class PortabilityTests(KnowledgeTestCase):
+    def test_v2_export_carries_advanced_content_and_v1_remains_valid(self):
+        concept = self.concept("Portable LINQ")
+        ConceptSection.objects.create(concept=concept, title="Operators", content="`Select`")
+        ConceptSource.objects.create(concept=concept, title="Docs", url="https://example.com")
+        payload = build_export(self.user)
+        self.assertEqual(payload["version"], 2)
+        self.assertEqual(payload["data"]["concepts"][0]["sections"][0]["title"], "Operators")
+        payload["version"] = 1
+        self.assertEqual(validate_import(payload, self.user)["concepts"], 1)
+
     def test_export_is_owner_scoped_and_markdown_is_safe_zip(self):
         category = Category.objects.create(owner=self.user, title="Architecture")
         concept = self.concept("C++ / ../../escape", category=category)
@@ -347,3 +360,139 @@ class PortabilityTests(KnowledgeTestCase):
         self.client.post(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]), data)
         concept.refresh_from_db()
         self.assertGreater(concept.sync_version, before)
+
+
+class AdvancedKnowledgeTests(KnowledgeTestCase):
+    def test_concept_editor_renders_bilingual_field_help_without_raw_card_state_label(self):
+        concept = self.concept("Guided")
+        response = self.client.get(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]))
+        self.assertContains(response, "Field Guide")
+        self.assertContains(response, "راهنمای فیلدها")
+        self.assertContains(response, "دسته اصلی این مفهوم")
+        self.assertContains(response, "primary location of this concept")
+        self.assertNotContains(response, "Is active")
+
+    def test_review_card_editor_groups_archived_cards_and_preserves_schedule(self):
+        concept = self.concept("Cards")
+        active = ReviewCard.objects.create(concept=concept, question="Active card", answer="Answer")
+        archived = ReviewCard.objects.create(
+            concept=concept, question="Archived card", answer="Answer", is_active=False
+        )
+        state = archived.state
+        state.review_count, state.interval_days = 7, 21
+        state.save(update_fields=["review_count", "interval_days"])
+        ReviewLog.objects.create(
+            concept=concept, card=archived, rating="good", reviewed_at=state.due_at,
+            previous_status="review", new_status="review", previous_due_at=state.due_at,
+            new_due_at=state.due_at, previous_interval_days=14, new_interval_days=21,
+        )
+        active_state = active.state
+        active_state.review_count, active_state.interval_days = 4, 12
+        active_state.save(update_fields=["review_count", "interval_days"])
+        ReviewLog.objects.create(
+            concept=concept, card=active, rating="good", reviewed_at=active_state.due_at,
+            previous_status="review", new_status="review", previous_due_at=active_state.due_at,
+            new_due_at=active_state.due_at, previous_interval_days=7, new_interval_days=12,
+        )
+
+        response = self.client.get(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]))
+        self.assertContains(response, "Active review cards")
+        self.assertContains(response, "Archived review cards")
+        self.assertContains(response, "Archived card")
+        self.assertContains(response, "Active card")
+        self.assertNotContains(response, "No archived review cards")
+
+        data = {
+            "title": concept.title, "quick_definition": concept.quick_definition,
+            "difficulty": concept.difficulty, "tag_names": "",
+            "review_cards-TOTAL_FORMS": 2, "review_cards-INITIAL_FORMS": 2,
+            "review_cards-MIN_NUM_FORMS": 0, "review_cards-MAX_NUM_FORMS": 1000,
+            "review_cards-0-id": active.pk, "review_cards-0-question": active.question,
+            "review_cards-0-answer": active.answer, "review_cards-0-hint": "",
+            "review_cards-0-sort_order": 0,
+            "review_cards-1-id": archived.pk, "review_cards-1-question": archived.question,
+            "review_cards-1-answer": archived.answer, "review_cards-1-hint": "",
+            "review_cards-1-sort_order": 1, "review_cards-1-is_active": "on",
+        }
+        response = self.client.post(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]), data)
+        self.assertEqual(response.status_code, 302)
+        archived.refresh_from_db()
+        active.refresh_from_db()
+        state.refresh_from_db()
+        active_state.refresh_from_db()
+        self.assertTrue(archived.is_active)
+        self.assertFalse(active.is_active)
+        self.assertEqual((state.review_count, state.interval_days), (7, 21))
+        self.assertEqual((active_state.review_count, active_state.interval_days), (4, 12))
+        self.assertEqual(archived.logs.count(), 1)
+        self.assertEqual(active.logs.count(), 1)
+
+    def test_review_card_editor_hides_archived_group_when_empty(self):
+        concept = self.concept("Only default")
+        response = self.client.get(reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]))
+        self.assertContains(response, "Default concept recall")
+        self.assertNotContains(response, "Archived review cards")
+
+    def test_review_card_formset_rejects_another_users_card(self):
+        concept = self.concept("Owned")
+        other_concept = Concept.objects.create(owner=self.other, title="Other", quick_definition="Other")
+        foreign_card = ReviewCard.objects.create(
+            concept=other_concept, question="Private", answer="Private"
+        )
+        response = self.client.post(
+            reverse("knowledge:concept_edit", args=[concept.pk, concept.slug]),
+            {
+                "title": concept.title, "quick_definition": concept.quick_definition,
+                "difficulty": concept.difficulty, "tag_names": "",
+                "review_cards-TOTAL_FORMS": 1, "review_cards-INITIAL_FORMS": 1,
+                "review_cards-MIN_NUM_FORMS": 0, "review_cards-MAX_NUM_FORMS": 1000,
+                "review_cards-0-id": foreign_card.pk, "review_cards-0-question": "Changed",
+                "review_cards-0-answer": "Changed", "review_cards-0-hint": "",
+                "review_cards-0-sort_order": 0,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        foreign_card.refresh_from_db()
+        self.assertEqual(foreign_card.question, "Private")
+
+    def test_advanced_aggregate_formsets_save_owned_content_and_card_state(self):
+        data = {
+            "title": "LINQ", "quick_definition": "Query objects.", "difficulty": "intermediate",
+            "tag_names": "[]", "freshness_status": "current", "last_verified_at": "2026-09-09",
+            "sections-TOTAL_FORMS": 1, "sections-INITIAL_FORMS": 0, "sections-MIN_NUM_FORMS": 0, "sections-MAX_NUM_FORMS": 1000,
+            "sections-0-section_type": "key_takeaways", "sections-0-title": "Operators", "sections-0-content": "Use `Select`.", "sections-0-sort_order": 0,
+            "sources-TOTAL_FORMS": 1, "sources-INITIAL_FORMS": 0, "sources-MIN_NUM_FORMS": 0, "sources-MAX_NUM_FORMS": 1000,
+            "sources-0-source_type": "documentation", "sources-0-title": "Microsoft Docs", "sources-0-url": "https://example.com", "sources-0-sort_order": 0,
+            "contexts-TOTAL_FORMS": 1, "contexts-INITIAL_FORMS": 0, "contexts-MIN_NUM_FORMS": 0, "contexts-MAX_NUM_FORMS": 1000,
+            "contexts-0-technology": ".NET", "contexts-0-version": "8", "contexts-0-sort_order": 0,
+            "review_cards-TOTAL_FORMS": 1, "review_cards-INITIAL_FORMS": 0, "review_cards-MIN_NUM_FORMS": 0, "review_cards-MAX_NUM_FORMS": 1000,
+            "review_cards-0-question": "What does Select do?", "review_cards-0-answer": "Projects values.", "review_cards-0-sort_order": 0, "review_cards-0-is_active": "on",
+        }
+        response = self.client.post(reverse("knowledge:concept_create"), data)
+        concept = Concept.objects.get(title="LINQ")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(concept.sections.get().section_type, "key_takeaways")
+        self.assertEqual(concept.sources.get().url, "https://example.com")
+        self.assertEqual(concept.contexts.get().version, "8")
+        card = concept.review_cards.get(card_type="basic")
+        self.assertTrue(hasattr(card, "state"))
+        self.assertEqual(concept.revisions.count(), 1)
+
+    def test_markdown_supports_tables_and_removes_active_content(self):
+        rendered = render_markdown("| Method | Purpose |\n| --- | --- |\n| `Where` | Filter |\n\n<script>alert(1)</script> [bad](javascript:alert(1))")
+        self.assertIn("<table>", rendered)
+        self.assertIn("<code>Where</code>", rendered)
+        self.assertNotIn("<script", rendered)
+        self.assertNotIn('href="javascript:', rendered)
+
+    def test_sections_sources_and_freshness_are_owner_scoped(self):
+        concept = self.concept("LINQ")
+        ConceptSection.objects.create(concept=concept, title="Operators", content="Use `Select`.")
+        ConceptSource.objects.create(concept=concept, title="Docs", url="https://example.com")
+        response = self.client.get(reverse("knowledge:concept_detail", args=[concept.pk, concept.slug]))
+        self.assertContains(response, "Operators")
+        self.assertContains(response, "Docs")
+        verified = self.client.post(reverse("knowledge:concept_verify", args=[concept.pk, concept.slug]))
+        self.assertEqual(verified.status_code, 302)
+        concept.refresh_from_db()
+        self.assertEqual(concept.freshness_status, "current")

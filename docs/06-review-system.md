@@ -1,47 +1,19 @@
 # Review system
 
-Versioned JSON portability includes canonical ReviewState and immutable ReviewLog records. Import validates ratings and timezone-aware log timestamps, then restores them only for newly imported Concepts; existing duplicate Concepts are never overwritten.
+MindRepo schedules cards, not whole Concepts. Every Concept has one persistent `concept_recall` ReviewCard whose prompt and answer derive from the title and quick definition. Users may add independent basic cards with Markdown answers and optional hints.
 
-## Scope
+## State and history
 
-Level 4 adds focused online review. It stores per-concept scheduling state and an immutable rating history; it does not add offline review, reminders, user preferences, or a scientific retention estimate.
+Each ReviewCard has exactly one `ReviewCardState`: `new`, `learning`, `review`, or `relearning`, with timezone-aware due time, interval, counts, scheduler metadata, and an optimistic version. Every accepted rating writes an immutable `ReviewLog` attached to that card and its parent Concept.
 
-## Data and lifecycle
+Migration `reviews.0003` created a default card for every existing Concept, copied the complete legacy `ConceptReviewState`, and attached historical logs to that card. `ConceptReviewState` remains a compatibility projection for the default card; it is not the primary scheduler state.
 
-Each `Concept` has exactly one `ConceptReviewState`. New concepts receive one through a post-save signal; migration `reviews.0001_initial` backfills existing concepts. The lifecycle is intentionally small:
+Custom cards can be archived. Archive and restore keep the card, `ReviewCardState`, and ReviewLogs unchanged. Archived cards are excluded from the queue and Concept mastery aggregation; restoring returns the card to its existing schedule.
 
-| State | Meaning |
-| --- | --- |
-| `new` | Never rated. |
-| `learning` | Being introduced with short steps. |
-| `review` | Established with day-based intervals. |
-| `relearning` | A lapsed established concept on a short recovery step. |
+## Scheduler, queue, and mastery
 
-Every accepted rating appends a `ReviewLog` containing the previous and resulting lifecycle, due time, interval, rating, and scheduler version. Normal user flows cannot edit history. Deleting a concept cascades its associated review state and logs.
+`mindrepo-v1` remains a pure deterministic scheduler. `reviews.services.submit_review()` locks and version-checks the card state, calculates the result, appends one log, and saves atomically. The queue is owner-scoped: overdue established cards, due established cards, then new cards, with ten new cards per configured application day.
 
-## Scheduler
+Concept mastery aggregates active cards qualitatively: all new is New; any new/learning/relearning activity is Learning; established active cards are Familiar unless every active card satisfies Strong. Strong requires review state, at least three successful reviews, and a 21-day interval.
 
-`mindrepo-v1` is a small deterministic internal scheduler. `schedule(state, rating, reviewed_at)` is pure and returns a result without saving. The submission service uses that same function for previews and persistence, so displayed intervals match the eventual result.
-
-| Current state | Again | Hard | Good | Easy |
-| --- | --- | --- | --- | --- |
-| New | learning, 10 minutes | learning, 1 day | review, 3 days | review, 7 days |
-| Learning | learning, 20 minutes | learning, 1 day | review, 3 days | review, 7 days |
-| Relearning | relearning, 30 minutes | relearning, 1 day | review, 3 days | review, 7 days |
-| Review | relearning, 30 minutes | review, 1.2x interval | review, 2x interval | review, 2.8x interval |
-
-Intervals have a 10-minute minimum and a 3,650-day maximum. `Again` on an established review increments the lapse count. The implementation stores neutral current-state fields plus contained `scheduler_data`, so a future SM-2 or FSRS adapter can replace `mindrepo-v1` without changing routes, templates, or history.
-
-## Queue and session
-
-The queue is scoped to the authenticated user and ordered as: overdue established cards, due established cards, then new cards. New introductions are capped at 10 per configured application day, while due cards always take priority. The session itself is intentionally not persisted: submitted ratings are durable, and refreshing or leaving rebuilds the remaining queue from current server state.
-
-The card shows the concept title and prompt first. The answer must be revealed before ratings appear. `1`–`4` rate Again, Hard, Good, and Easy after reveal; Space or Enter reveals the answer. A rendered state version is verified during submission, and the state row is locked in a transaction to reject stale tabs and double submissions safely.
-
-## Mastery and time
-
-Mastery is qualitative rather than a claimed probability: `New`, `Learning`, `Familiar`, and `Strong`. Strong requires review status, at least three successful reviews, and an interval of at least 21 days. All due logic uses timezone-aware Django datetimes. There is not yet a per-user timezone preference, so daily limits and today statistics use the configured application timezone consistently.
-
-## Privacy and offline behavior
-
-Review pages, answer content, history, and schedule data are private. The service worker continues to cache only named static assets and the public offline fallback; it does not persist authenticated HTML or queue responses. If a rating is attempted offline, the browser shows that it was not saved. Offline reading, offline review submission, IndexedDB, and synchronization are Level 6 work.
+Random Recall remains Concept-level and never changes ReviewCardState or creates ReviewLogs. Scheduled review remains online-only; no client scheduler or offline rating queue exists.

@@ -26,10 +26,12 @@ SQLite uses portable case-insensitive Django ORM matching with explicit weighted
 
 The Search page supports category, tag, difficulty, favorite, and sort filters with 20-result pagination. The command palette returns at most eight results after a 200ms HTMX debounce. It uses a native dialog, keeps focus in the input, supports Arrow keys, Enter, Escape, and returns focus to the trigger. On mobile Ctrl/Cmd+K routes to the full Search page instead of forcing a desktop modal.
 
-Favorites use the existing boolean field and an owner-scoped CSRF-protected POST toggle. Random Recall selects from the current user's scoped set, can be limited to favorites/category/difficulty, avoids the immediate previous concept when another choice exists, and uses GET-only reveal/navigation. It never creates a `ReviewLog` or updates `ConceptReviewState`; “Review this concept” is an explicit link to the real review flow.
+Favorites use the existing boolean field and an owner-scoped CSRF-protected POST toggle. Random Recall selects from the current user's scoped set, can be limited to favorites/category/difficulty, avoids the immediate previous concept when another choice exists, and uses GET-only reveal/navigation. It never creates a `ReviewLog` or updates `ReviewCardState`; “Review this concept” is an explicit link to the real review flow.
 
 ## Privacy and offline
 
 Queries are not sent to third parties and recent searches are intentionally not persisted. Search, palette, favorites, and random pages are private dynamic HTML; the service worker still caches only named static assets and the public offline fallback. Offline search and private offline content remain Level 6 work.
 
 Level 6 adds an opt-in IndexedDB local-search fallback with the same conservative title/alias/tag/category/content priority. It is deliberately simpler than online PostgreSQL ranking and does not cache the private Search page.
+
+Advanced Concept search also considers section titles/content, source titles/notes, technology/version contexts, and ReviewCard question/answer, while still returning one deduplicated parent Concept. Title, aliases, tags, and category remain higher-priority signals. Random Recall remains Concept-level and never mutates card schedule state or ReviewLogs.

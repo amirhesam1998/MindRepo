@@ -13,6 +13,8 @@ dependencies = [
     "psycopg[binary]>=3.2,<3.3",
     "python-dotenv>=1.0,<2.0",
     "gunicorn>=23,<24",
+    "markdown-it-py>=3.0,<4.0",
+    "nh3>=0.2,<1.0",
 ]
 
 [dependency-groups]

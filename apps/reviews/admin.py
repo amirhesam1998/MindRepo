@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ConceptReviewState, ReviewLog
+from .models import ConceptReviewState, ReviewCard, ReviewCardState, ReviewLog
 
 
 @admin.register(ConceptReviewState)
@@ -8,6 +8,10 @@ class ConceptReviewStateAdmin(admin.ModelAdmin):
     list_display = ("concept", "status", "due_at", "review_count", "lapse_count", "interval_days")
     list_filter = ("status",)
     search_fields = ("concept__title", "concept__owner__username")
+
+
+admin.site.register(ReviewCard)
+admin.site.register(ReviewCardState)
 
 
 @admin.register(ReviewLog)

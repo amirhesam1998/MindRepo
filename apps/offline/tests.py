@@ -23,13 +23,16 @@ class OfflineSyncTests(TestCase):
     def post_mutations(self, mutations):
         return self.client.post(
             reverse("offline:mutations"),
-            data=json.dumps({"protocol_version": 1, "mutations": mutations}),
+            data=json.dumps({"protocol_version": 2, "mutations": mutations}),
             content_type="application/json",
         )
 
+    def get_sync(self, name, data=None):
+        return self.client.get(reverse(f"offline:{name}"), {"protocol_version": 2, **(data or {})})
+
     def test_bootstrap_and_changes_are_private_json_no_store(self):
         concept = self.concept()
-        response = self.client.get(reverse("offline:bootstrap"))
+        response = self.get_sync("bootstrap")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/json")
         self.assertEqual(response["Cache-Control"], "no-store")
@@ -39,9 +42,9 @@ class OfflineSyncTests(TestCase):
 
         concept.quick_definition = "Updated"
         concept.save()
-        changes = self.client.get(reverse("offline:changes"), {"cursor": 0}).json()["changes"]
+        changes = self.get_sync("changes", {"cursor": 0}).json()["changes"]
         self.assertTrue(any(change["entity_id"] == concept.pk for change in changes))
-        invalid = self.client.get(reverse("offline:changes"), {"cursor": -1})
+        invalid = self.get_sync("changes", {"cursor": -1})
         self.assertEqual(invalid.status_code, 400)
         self.assertEqual(invalid.json()["status"], "full_resync")
 
@@ -49,7 +52,7 @@ class OfflineSyncTests(TestCase):
         self.concept()
         cursor = OfflineChange.objects.order_by("-pk").first().pk
         self.concept("Later")
-        response = self.client.get(reverse("offline:bootstrap"), {"cursor": cursor})
+        response = self.get_sync("bootstrap", {"cursor": cursor})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["snapshot_cursor"], cursor)
 
@@ -65,7 +68,7 @@ class OfflineSyncTests(TestCase):
         cursor = OfflineChange.objects.order_by("-pk").first().pk
         concept_id = concept.pk
         concept.delete()
-        change = self.client.get(reverse("offline:changes"), {"cursor": cursor}).json()["changes"][0]
+        change = self.get_sync("changes", {"cursor": cursor}).json()["changes"][0]
         self.assertEqual(change["operation"], "delete")
         self.assertEqual(change["entity_id"], concept_id)
 
@@ -117,6 +120,9 @@ class OfflineSyncTests(TestCase):
         malformed = self.post_mutations(["not-a-mutation"])
         self.assertEqual(malformed.status_code, 200)
         self.assertEqual(malformed.json()["results"][0]["status"], "invalid")
+        legacy = self.client.get(reverse("offline:bootstrap"), {"protocol_version": 1})
+        self.assertEqual(legacy.status_code, 400)
+        self.assertEqual(legacy.json()["required_protocol"], 2)
 
     def test_normal_online_favorite_generates_change_and_sync_version(self):
         concept = self.concept()
@@ -132,10 +138,10 @@ class OfflineSyncTests(TestCase):
         created_cursor = OfflineChange.objects.order_by("-pk").first().pk
         concept.quick_definition = "Changed online"
         concept.save()
-        update_changes = self.client.get(reverse("offline:changes"), {"cursor": created_cursor}).json()["changes"]
+        update_changes = self.get_sync("changes", {"cursor": created_cursor}).json()["changes"]
         self.assertTrue(any(change["entity_id"] == concept.pk and change["operation"] == "upsert" for change in update_changes))
         updated_cursor = OfflineChange.objects.order_by("-pk").first().pk
         concept_id = concept.pk
         concept.delete()
-        changes = self.client.get(reverse("offline:changes"), {"cursor": updated_cursor}).json()["changes"]
+        changes = self.get_sync("changes", {"cursor": updated_cursor}).json()["changes"]
         self.assertTrue(any(change["entity_id"] == concept_id and change["operation"] == "delete" for change in changes))

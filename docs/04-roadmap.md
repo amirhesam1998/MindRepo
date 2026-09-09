@@ -38,7 +38,11 @@ Implement review queue, reveal-and-rate session, immutable review records, sched
 
 ### Completion
 
-Implemented: the `reviews` app; one schedule state per concept; old-concept backfill; deterministic `mindrepo-v1` scheduling; atomic, version-checked review submissions; immutable review logs; due/new queue ordering with a daily new-card limit; history; qualitative mastery; dashboard and concept-detail review summaries; and focused review/security tests. Offline review, per-user time zones, reminders, and FSRS remain deferred.
+Implemented: card-level review: default concept-recall cards, independent custom card schedules, archive/reactivate without history loss, populated legacy-state migration, deterministic `mindrepo-v1` scheduling, atomic version-checked submissions, immutable logs, due/new queue ordering, history, and qualitative Concept mastery. Offline review, per-user time zones, reminders, and FSRS remain deferred.
+
+## Advanced knowledge upgrade — complete in code
+
+Implemented: Markdown sections and preview, strict self-hosted Mermaid, sources, contexts, freshness, revision history/compare/restore, ReviewCards, export v2 with v1 import, and offline protocol/IndexedDB v2. Remaining release gates are PostgreSQL runtime testing, real-browser offline testing, and an isolated PostgreSQL backup/restore rehearsal. Legacy `ConceptReviewState` remains a compatibility projection.
 
 ## Level 5 — retrieval enhancements
 

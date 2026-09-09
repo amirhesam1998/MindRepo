@@ -78,11 +78,26 @@
     dropzone.addEventListener("drop", (event) => addFiles(event.dataTransfer.files));
     editor.querySelectorAll("[data-remove-attachment]").forEach((button) => button.addEventListener("click", () => { const card = button.closest("[data-existing-attachment]"); const hidden = document.createElement("input"); hidden.type = "hidden"; hidden.name = "remove_attachment_ids"; hidden.value = card.dataset.attachmentId; removed.append(hidden); card.remove(); }));
   }
+  function initFieldHelp(editor) {
+    const close = (except) => editor.querySelectorAll("[data-field-help-toggle]").forEach((trigger) => {
+      if (trigger === except) return; trigger.setAttribute("aria-expanded", "false"); trigger.nextElementSibling.hidden = true;
+    });
+    editor.querySelectorAll("[data-field-help-toggle]").forEach((trigger) => {
+      const panel = trigger.nextElementSibling;
+      const toggle = () => { const open = trigger.getAttribute("aria-expanded") !== "true"; close(trigger); trigger.setAttribute("aria-expanded", String(open)); panel.hidden = !open; };
+      trigger.addEventListener("click", toggle); trigger.addEventListener("focus", () => { close(trigger); trigger.setAttribute("aria-expanded", "true"); panel.hidden = false; });
+    });
+    document.addEventListener("click", (event) => { if (!event.target.closest(".field-help")) close(); });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
+    const guide = document.querySelector("[data-field-guide]");
+    editor.querySelector("[data-open-field-guide]")?.addEventListener("click", () => guide?.showModal());
+    guide?.querySelector("[data-close-field-guide]")?.addEventListener("click", () => guide.close());
+  }
   function init(editor) {
-    initTags(editor); initAttachments(editor); editor.querySelectorAll("[data-formset]").forEach(initFormset);
+    initTags(editor); initAttachments(editor); initFieldHelp(editor); editor.querySelectorAll("[data-formset]").forEach(initFormset);
     editor.querySelectorAll("[data-editor-section]").forEach((section) => section.querySelector(".editor-section__toggle")?.addEventListener("click", () => { const open = section.classList.toggle("is-open"); section.querySelector(".editor-section__toggle").setAttribute("aria-expanded", String(open)); }));
     let dirty = false; editor.addEventListener("input", () => { dirty = true; }); editor.addEventListener("change", () => { dirty = true; });
-    editor.addEventListener("submit", () => { editor.querySelectorAll("textarea.code-source").forEach((textarea) => { const aceEditor = editors.get(textarea); if (aceEditor) textarea.value = aceEditor.getValue(); }); dirty = false; const button = editor.querySelector("[data-save-button]"); if (button) { button.disabled = true; button.textContent = "Saving…"; } });
+    editor.addEventListener("submit", () => { editor.querySelectorAll("textarea.code-source").forEach((textarea) => { const aceEditor = editors.get(textarea); if (aceEditor) textarea.value = aceEditor.getValue(); }); editor.querySelectorAll("textarea.markdown-source").forEach((textarea) => { if (textarea._toastEditor) textarea.value = textarea._toastEditor.getMarkdown(); }); dirty = false; const button = editor.querySelector("[data-save-button]"); if (button) { button.disabled = true; button.textContent = "Saving…"; } });
     window.addEventListener("beforeunload", (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
   }
   document.addEventListener("DOMContentLoaded", () => { document.querySelectorAll("[data-concept-editor]").forEach(init); new MutationObserver(() => document.querySelectorAll("textarea.code-source").forEach((textarea) => editors.get(textarea)?.setTheme(aceTheme()))).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); });

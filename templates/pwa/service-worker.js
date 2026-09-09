@@ -1,9 +1,11 @@
-{% load static %}const CACHE_NAME = "mindrepo-static-v3";
+{% load static %}const CACHE_NAME = "mindrepo-static-v4";
 const STATIC_ASSETS = [
   "/offline/",
   "{% static 'css/app.css' %}",
   "{% static 'js/app.js' %}",
   "{% static 'js/offline.js' %}",
+  "{% static 'js/knowledge-enhancements.js' %}",
+  "{% static 'vendor/mermaid/mermaid-11.4.1.min.js' %}",
   "{% static 'vendor/bootstrap/bootstrap.rtl.min.css' %}",
   "{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}",
   "{% static 'vendor/htmx/htmx.min.js' %}",

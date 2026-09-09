@@ -10,8 +10,8 @@ The planned app boundaries are:
 | --- | --- |
 | `core` | shared layout, dashboard/home, shared template utilities, static PWA endpoints |
 | `accounts` | custom user model and Django authentication integration |
-| `knowledge` | categories, concepts, aliases, tags, snippets, and concept relations |
-| `reviews` | review history, per-concept schedule state, queue, and scheduling orchestration |
+| `knowledge` | categories, Concepts, sections, sources, contexts, revisions, attachments, aliases, tags, snippets, and relations |
+| `reviews` | ReviewCards, card schedule state, queue, scheduler, and immutable history |
 | `search` | cross-knowledge search queries and command-palette endpoints |
 | `offline` | opt-in sync protocol, owner-scoped changes, mutation receipts, and IndexedDB-facing DTOs |
 
@@ -41,7 +41,7 @@ SQLite uses portable case-insensitive, weighted matching. PostgreSQL adds Django
 
 ## Review architecture
 
-`reviews` owns `ConceptReviewState` and immutable `ReviewLog` records; `knowledge` remains the owner of stored concepts. A post-save signal creates a state for each new concept, the initial migration backfills pre-existing concepts, and concept detail has a safe lazy fallback for an interrupted creation path.
+`reviews` owns `ReviewCard`, `ReviewCardState`, and immutable `ReviewLog` records; `knowledge` owns Concept content and revisions. Every Concept has one default `concept_recall` card and may have custom basic cards. `ConceptReviewState` remains only as a compatibility projection for the default card while legacy consumers are retired.
 
 `reviews.scheduling.schedule(state, rating, reviewed_at)` is a pure, versioned `mindrepo-v1` calculation. `reviews.services.submit_review()` locks the state, verifies its optimistic version, calculates the schedule, writes a log, and saves the next state inside one transaction. Queue selectors build a user-scoped queue without loading the library into memory. This isolates a future SM-2 or FSRS adapter from views, templates, and history.
 
@@ -57,7 +57,7 @@ Use CSS logical properties and direction-aware layout for RTL. Content is direct
 
 ## PWA and offline direction
 
-The versioned worker caches only named static shell assets and `/offline/`; navigations are network-first and private authenticated HTML (including review queue, history, answers, concepts, search, and JSON) is never persistently cached. Level 6 adds a separate opt-in IndexedDB replica, never Cache Storage private content. The `offline` app supplies a paged bootstrap endpoint, ordered owner-scoped change feed, and idempotent mutation endpoint. Concept is the sync aggregate root: tags, aliases, snippets, mistakes, and relations are included in its document, and `sync_version` protects aggregate updates. Review remains server-only. See `docs/08-offline-and-sync.md`.
+The versioned worker caches only named static shell assets and `/offline/`; navigations are network-first and private authenticated HTML (including review queue, history, answers, concepts, search, and JSON) is never persistently cached. The `offline` app supplies protocol-v2 bootstrap, owner-scoped changes, and idempotent mutations. Concept is the sync aggregate root: tags, aliases, snippets, mistakes, sections, sources, contexts, and freshness are structured data protected by `sync_version`. Review remains server-only. See `docs/08-offline-and-sync.md`.
 
 ## Deployment direction
 

@@ -10,7 +10,8 @@ from .models import AppliedClientMutation
 from .serializers import concept_document, sync_queryset
 
 
-PROTOCOL_VERSION = 1
+OFFLINE_SYNC_PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = OFFLINE_SYNC_PROTOCOL_VERSION
 MAX_BATCH_SIZE = 20
 
 

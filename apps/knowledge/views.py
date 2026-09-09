@@ -1,3 +1,4 @@
+from difflib import unified_diff
 from urllib.parse import urlencode
 
 from django.contrib import messages
@@ -12,9 +13,12 @@ from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
+
+from apps.reviews.models import ReviewCard
 
 from .forms import (
     AliasFormSet,
@@ -22,10 +26,16 @@ from .forms import (
     ConceptForm,
     MistakeFormSet,
     RelationFormSet,
+    SectionFormSet,
     SnippetFormSet,
+    SourceFormSet,
+    ContextFormSet,
+    ReviewCardFormSet,
 )
-from .models import Category, Concept, ConceptAttachment, ConceptRelation, Tag
+from .models import Category, Concept, ConceptAttachment, ConceptRelation, ConceptRevision, Tag
 from .portability import MAX_IMPORT_BYTES, apply_import, export_json, export_markdown_zip, validate_import
+from .revisions import create_revision, restore_revision, snapshot
+from .markdown import render_markdown
 
 
 def category_rows(categories):
@@ -112,6 +122,7 @@ class ConceptDetailView(OwnedConceptMixin, DetailView):
                 "snippets",
                 "mistakes",
                 "attachments",
+                "sections", "sources", "contexts", "review_cards__state",
                 Prefetch("outgoing_relations", queryset=ConceptRelation.objects.select_related("target")),
             )
         )
@@ -134,8 +145,83 @@ class ConceptDetailView(OwnedConceptMixin, DetailView):
             review_status = "Due now"
         else:
             review_status = f"Due {date_format(state.due_at, 'M j')}"
-        context["review_summary"] = {"state": state, "status": review_status, "mastery": mastery_level(state)}
+        context["review_summary"] = {"state": state, "status": review_status, "mastery": mastery_level(self.object)}
         return context
+
+
+class RevisionHistoryView(OwnedConceptMixin, ListView):
+    template_name = "knowledge/revision_history.html"
+    context_object_name = "revisions"
+    paginate_by = 20
+
+    def dispatch(self, request, *args, **kwargs):
+        self.concept = self.get_object()
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return ConceptRevision.objects.filter(concept=self.concept).only("id", "revision_number", "source", "created_at")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["concept"] = self.concept
+        return context
+
+
+class RevisionDetailView(OwnedConceptMixin, DetailView):
+    template_name = "knowledge/revision_detail.html"
+    context_object_name = "revision"
+
+    def get_object(self, queryset=None):
+        concept = super().get_object()
+        self.concept = concept
+        return get_object_or_404(ConceptRevision, concept=concept, revision_number=self.kwargs["revision_number"])
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["concept"] = self.concept
+        return context
+
+
+class RevisionCompareView(OwnedConceptMixin, DetailView):
+    template_name = "knowledge/revision_compare.html"
+    context_object_name = "revision"
+
+    def get_object(self, queryset=None):
+        concept = super().get_object()
+        self.concept = concept
+        return get_object_or_404(ConceptRevision, concept=concept, revision_number=self.kwargs["revision_number"])
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        current = snapshot(self.concept)
+        old = self.object.snapshot
+        fields = [("Title", "title"), ("Quick definition", "quick_definition"), ("Simple explanation", "simple_explanation"), ("Deep dive", "deep_dive"), ("Tags", "tags"), ("Aliases", "aliases"), ("Sections", "sections"), ("Sources", "sources"), ("Contexts", "contexts"), ("Review cards", "cards")]
+        rows = []
+        for label, key in fields:
+            before, after = str(old.get(key, "")), str(current.get(key, ""))
+            if before != after:
+                rows.append({"label": label, "before": before, "after": after, "diff": "\n".join(unified_diff(before.splitlines(), after.splitlines(), fromfile="Historical", tofile="Current", lineterm=""))})
+        context.update(concept=self.concept, comparisons=rows)
+        return context
+
+
+class RevisionRestoreView(OwnedConceptMixin, View):
+    template_name = "knowledge/revision_restore_confirm.html"
+
+    def get_revision(self):
+        concept = self.get_object()
+        revision = get_object_or_404(ConceptRevision, concept=concept, revision_number=self.kwargs["revision_number"])
+        return concept, revision
+
+    def get(self, request, *args, **kwargs):
+        concept, revision = self.get_revision()
+        return render(request, self.template_name, {"concept": concept, "revision": revision})
+
+    def post(self, request, *args, **kwargs):
+        concept, revision = self.get_revision()
+        restore_revision(concept, revision)
+        messages.success(request, "Revision restored. Review schedules and attachment files were not changed.")
+        return HttpResponseRedirect(reverse("knowledge:concept_detail", args=[concept.pk, concept.slug]))
 
 
 class ConceptFormMixin(OwnedConceptMixin):
@@ -148,16 +234,25 @@ class ConceptFormMixin(OwnedConceptMixin):
         return kwargs
 
     def get_formsets(self, instance):
-        kwargs = {"instance": instance}
-        if self.request.method == "POST":
-            kwargs.update({"data": self.request.POST})
+        def formset_kwargs(prefix):
+            kwargs = {"instance": instance}
+            if self.request.method == "POST" and f"{prefix}-TOTAL_FORMS" in self.request.POST:
+                kwargs["data"] = self.request.POST
+            return kwargs
         return {
-            "aliases": AliasFormSet(**kwargs),
-            "snippets": SnippetFormSet(**kwargs),
-            "mistakes": MistakeFormSet(**kwargs),
+            "aliases": AliasFormSet(**formset_kwargs("aliases")),
+            "snippets": SnippetFormSet(**formset_kwargs("snippets")),
+            "mistakes": MistakeFormSet(**formset_kwargs("mistakes")),
             "relations": RelationFormSet(
-                **kwargs,
+                **formset_kwargs("outgoing_relations"),
                 form_kwargs={"user": self.request.user},
+            ),
+            "sections": SectionFormSet(**formset_kwargs("sections")),
+            "sources": SourceFormSet(**formset_kwargs("sources")),
+            "contexts": ContextFormSet(**formset_kwargs("contexts")),
+            "review_cards": ReviewCardFormSet(
+                **formset_kwargs("review_cards"),
+                queryset=ReviewCard.objects.filter(card_type=ReviewCard.Type.BASIC),
             ),
         }
 
@@ -205,24 +300,34 @@ class ConceptFormMixin(OwnedConceptMixin):
         context = super().get_context_data(**kwargs)
         instance = getattr(self, "object", None) or Concept(owner=self.request.user)
         context.setdefault("formsets", self.get_formsets(instance))
+        cards = context["formsets"]["review_cards"].forms
+        context["active_review_card_count"] = sum(
+            1 for card in cards if card.instance.is_active
+        )
+        context["archived_review_card_count"] = sum(
+            1 for card in cards if not card.instance.is_active
+        )
         return context
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object() if hasattr(self, "get_object") and kwargs else None
+        is_new = self.object is None
         form = self.get_form()
         formsets = self.get_formsets(self.object or Concept(owner=request.user))
-        if form.is_valid() and all(formset.is_valid() for formset in formsets.values()):
+        if form.is_valid() and all(not formset.is_bound or formset.is_valid() for formset in formsets.values()):
             try:
                 with transaction.atomic():
                     concept = form.save()
                     for formset in formsets.values():
                         formset.instance = concept
-                        formset.save()
+                        if formset.is_bound:
+                            formset.save()
                     self.save_attachments(concept)
                     # Nested records are part of the offline Concept aggregate. Ensure a
                     # final aggregate version/change is visible after formset writes.
-                    if any(formset.has_changed() for formset in formsets.values()):
+                    if any(formset.is_bound and formset.has_changed() for formset in formsets.values()):
                         concept.save(update_fields=["updated_at"])
+                    create_revision(concept, "create" if is_new else "edit")
             except ValidationError as error:
                 form.add_error(None, error)
                 return self.render_to_response(self.get_context_data(form=form, formsets=formsets))
@@ -242,6 +347,23 @@ class ConceptCreateView(ConceptFormMixin, CreateView):
 
 class ConceptUpdateView(ConceptFormMixin, UpdateView):
     pass
+
+
+@login_required
+@require_POST
+def markdown_preview(request):
+    return HttpResponse(render_markdown(request.POST.get("content", "")))
+
+
+class MarkVerifiedView(OwnedConceptMixin, View):
+    def post(self, request, pk, slug):
+        concept = self.get_object()
+        concept.freshness_status = Concept.Freshness.CURRENT
+        concept.last_verified_at = timezone.localdate()
+        concept.save(update_fields=["freshness_status", "last_verified_at"])
+        create_revision(concept, "edit")
+        messages.success(request, "Marked verified today.")
+        return HttpResponseRedirect(reverse("knowledge:concept_detail", args=[concept.pk, concept.slug]))
 
 
 class ConceptDeleteView(OwnedConceptMixin, DeleteView):

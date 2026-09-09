@@ -120,6 +120,14 @@ class Concept(OwnedSlugModel):
     deep_dive = models.TextField(blank=True)
     difficulty = models.CharField(max_length=20, choices=Difficulty.choices, default=Difficulty.INTERMEDIATE)
     is_favorite = models.BooleanField(default=False)
+    class Freshness(models.TextChoices):
+        CURRENT = "current", "Current"
+        NEEDS_VERIFICATION = "needs_verification", "Needs verification"
+        OUTDATED = "outdated", "Outdated"
+
+    freshness_status = models.CharField(max_length=24, choices=Freshness.choices, default=Freshness.NEEDS_VERIFICATION)
+    last_verified_at = models.DateField(blank=True, null=True)
+    verification_note = models.TextField(blank=True)
     sync_version = models.PositiveIntegerField(default=1)
     tags = models.ManyToManyField(Tag, blank=True, related_name="concepts")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -246,3 +254,85 @@ class ConceptAttachment(models.Model):
     @property
     def is_image(self):
         return self.content_type in {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+class ConceptSection(models.Model):
+    class Type(models.TextChoices):
+        STANDARD = "standard", "Standard section"
+        KEY_TAKEAWAYS = "key_takeaways", "Key takeaways"
+        NOTE = "note", "Important note"
+        WARNING = "warning", "Warning / gotcha"
+        BEST_PRACTICES = "best_practices", "Best practices"
+        COMPARISON = "comparison", "Comparison"
+        DIAGRAM = "diagram", "Diagram"
+
+    public_id = models.UUIDField(default=uuid4, editable=False, unique=True)
+    concept = models.ForeignKey(Concept, on_delete=models.CASCADE, related_name="sections")
+    title = models.CharField(max_length=160)
+    section_type = models.CharField(max_length=24, choices=Type.choices, default=Type.STANDARD)
+    content = models.TextField(blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+
+
+class ConceptSource(models.Model):
+    class Type(models.TextChoices):
+        DOCUMENTATION = "documentation", "Documentation"
+        BOOK = "book", "Book"
+        ARTICLE = "article", "Article"
+        COURSE = "course", "Course"
+        VIDEO = "video", "Video"
+        PAPER = "paper", "Paper"
+        REPOSITORY = "repository", "Repository"
+        COMPANY_DOCUMENTATION = "company_documentation", "Company documentation"
+        PERSONAL_EXPERIENCE = "personal_experience", "Personal experience"
+        OTHER = "other", "Other"
+
+    concept = models.ForeignKey(Concept, on_delete=models.CASCADE, related_name="sources")
+    title = models.CharField(max_length=200)
+    source_type = models.CharField(max_length=32, choices=Type.choices, default=Type.DOCUMENTATION)
+    url = models.URLField(blank=True)
+    author = models.CharField(max_length=160, blank=True)
+    publisher = models.CharField(max_length=160, blank=True)
+    version = models.CharField(max_length=80, blank=True)
+    note = models.TextField(blank=True)
+    accessed_at = models.DateField(blank=True, null=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+
+
+class ConceptContext(models.Model):
+    concept = models.ForeignKey(Concept, on_delete=models.CASCADE, related_name="contexts")
+    technology = models.CharField(max_length=120)
+    version = models.CharField(max_length=80, blank=True)
+    note = models.TextField(blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+
+
+class ConceptRevision(models.Model):
+    class Source(models.TextChoices):
+        CREATE = "create", "Create"
+        EDIT = "edit", "Edit"
+        IMPORT = "import", "Import"
+        RESTORE = "restore", "Restore"
+
+    concept = models.ForeignKey(Concept, on_delete=models.CASCADE, related_name="revisions")
+    revision_number = models.PositiveIntegerField()
+    snapshot = models.JSONField(default=dict)
+    source = models.CharField(max_length=16, choices=Source.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-revision_number"]
+        constraints = [models.UniqueConstraint(fields=["concept", "revision_number"], name="knowledge_revision_number_unique")]

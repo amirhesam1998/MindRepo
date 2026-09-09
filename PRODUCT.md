@@ -14,11 +14,11 @@ MindRepo serves individual developers who need to retrieve, understand, and reta
 
 ## Product Purpose
 
-MindRepo is a private developer knowledge system for fast discovery, recall, and continuous review. Success means a user can recover a concept within seconds without turning their personal notes into a public blog or a generic dashboard.
+MindRepo is a private structured developer knowledge and recall system for fast discovery, durable technical notes, and continuous card-level review. A concept can grow from a quick definition into Markdown sections, diagrams, references, version context, and independent study cards without becoming a public blog or generic dashboard.
 
 ## Positioning
 
-Personal technical knowledge, organized for recall rather than publication.
+Personal technical knowledge, organized for recall, verification, and revision rather than publication.
 
 ## Brand Personality
 

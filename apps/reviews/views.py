@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Q
 from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -7,7 +8,7 @@ from django.views import View
 from django.views.generic import ListView, TemplateView
 
 from .forms import RatingForm
-from .models import ConceptReviewState, ReviewLog
+from .models import ReviewCardState, ReviewLog
 from .scheduling import interval_label, schedule
 from .selectors import build_review_queue, due_count, new_count, next_due, reviewed_today_count
 from .services import StaleReviewError, submit_review
@@ -69,7 +70,7 @@ class ReviewSessionView(LoginRequiredMixin, TemplateView):
 
 class RevealAnswerView(LoginRequiredMixin, View):
     def post(self, request, state_id):
-        state = ConceptReviewState.objects.filter(pk=state_id, concept__owner=request.user).first()
+        state = ReviewCardState.objects.filter(pk=state_id, card__concept__owner=request.user, card__is_active=True).select_related("card", "card__concept").first()
         if not state:
             raise Http404
         try:
@@ -89,7 +90,7 @@ class RateReviewView(LoginRequiredMixin, View):
     def post(self, request, state_id):
         data = session_data(request)
         form = RatingForm(request.POST)
-        state = ConceptReviewState.objects.filter(pk=state_id, concept__owner=request.user).first()
+        state = ReviewCardState.objects.filter(pk=state_id, card__concept__owner=request.user, card__is_active=True).select_related("card", "card__concept").first()
         if not state:
             raise Http404
         if not form.is_valid() or data.get("revealed") != [state.pk, state.version]:
@@ -122,7 +123,7 @@ class ReviewHistoryView(LoginRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = ReviewLog.objects.filter(concept__owner=self.request.user).select_related("concept")
+        queryset = ReviewLog.objects.filter(Q(card__concept__owner=self.request.user) | Q(card__isnull=True, concept__owner=self.request.user)).select_related("concept", "card")
         if rating := self.request.GET.get("rating"):
             if rating in ReviewLog.Rating.values:
                 queryset = queryset.filter(rating=rating)

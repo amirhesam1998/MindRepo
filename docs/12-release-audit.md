@@ -39,3 +39,7 @@
 ## Post-audit editor refinement
 
 The Concept editor now adds private attachments and self-hosted Ace/Sortable assets. This introduces `knowledge.0004_conceptattachment`, requires `MEDIA_ROOT` to be included in operational backups, and leaves attachment binaries unavailable offline. The prior NO-GO decision remains unchanged until the PostgreSQL, browser Offline Knowledge, and restore gates are re-run.
+
+## Advanced knowledge completion
+
+The advanced knowledge implementation is code-complete: safe Markdown/preview, strict self-hosted Mermaid, revisions with content-only restore, card-level review including archived custom cards, export v2/v1 import, and offline protocol/IndexedDB v2. This does not clear the existing **NO-GO** gates: a real PostgreSQL run, real-browser offline validation, and isolated PostgreSQL backup-to-restore rehearsal remain unrecorded.

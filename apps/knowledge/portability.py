@@ -13,13 +13,14 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.text import slugify
 
-from apps.reviews.models import ConceptReviewState, ReviewLog
+from apps.reviews.models import ConceptReviewState, ReviewCard, ReviewCardState, ReviewLog
 
-from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptRelation, Tag, normalized
+from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptContext, ConceptRelation, ConceptSection, ConceptSource, Tag, normalized
+from .revisions import create_revision
 
 
 EXPORT_FORMAT = "mindrepo"
-EXPORT_VERSION = 1
+EXPORT_VERSION = 2
 MAX_IMPORT_BYTES = 2 * 1024 * 1024
 MAX_IMPORT_CONCEPTS = 2_000
 
@@ -30,7 +31,7 @@ def _date(value):
 
 def _concepts(user):
     return Concept.objects.filter(owner=user).select_related("category", "review_state").prefetch_related(
-        "tags", "aliases", "snippets", "mistakes", "attachments", "outgoing_relations__target", "review_logs"
+        "tags", "aliases", "snippets", "mistakes", "attachments", "sections", "sources", "contexts", "review_cards", "outgoing_relations__target", "review_logs"
     )
 
 
@@ -40,7 +41,7 @@ def build_export(user, *, include_reviews=True):
     for category in Category.objects.filter(owner=user).select_related("parent"):
         data["categories"].append({"id": str(category.pk), "title": category.title, "description": category.description, "parent_id": str(category.parent_id) if category.parent_id else None})
     for concept in concepts:
-        row = {"id": str(concept.pk), "title": concept.title, "slug": concept.slug, "quick_definition": concept.quick_definition, "simple_explanation": concept.simple_explanation, "deep_dive": concept.deep_dive, "difficulty": concept.difficulty, "is_favorite": concept.is_favorite, "category_id": str(concept.category_id) if concept.category_id else None, "tags": [tag.name for tag in concept.tags.all()], "aliases": [item.value for item in concept.aliases.all()], "snippets": [{"title": item.title, "language": item.language, "code": item.code, "explanation": item.explanation, "sort_order": item.sort_order} for item in concept.snippets.all()], "mistakes": [{"title": item.title, "description": item.description, "correction": item.correction, "sort_order": item.sort_order} for item in concept.mistakes.all()], "attachments": [{"name": item.original_name, "content_type": item.content_type, "file_size": item.file_size} for item in concept.attachments.all()], "relations": [{"target_id": str(item.target_id), "relation_type": item.relation_type} for item in concept.outgoing_relations.all()], "created_at": _date(concept.created_at), "updated_at": _date(concept.updated_at)}
+        row = {"id": str(concept.pk), "title": concept.title, "slug": concept.slug, "quick_definition": concept.quick_definition, "simple_explanation": concept.simple_explanation, "deep_dive": concept.deep_dive, "difficulty": concept.difficulty, "is_favorite": concept.is_favorite, "category_id": str(concept.category_id) if concept.category_id else None, "tags": [tag.name for tag in concept.tags.all()], "aliases": [item.value for item in concept.aliases.all()], "snippets": [{"title": item.title, "language": item.language, "code": item.code, "explanation": item.explanation, "sort_order": item.sort_order} for item in concept.snippets.all()], "mistakes": [{"title": item.title, "description": item.description, "correction": item.correction, "sort_order": item.sort_order} for item in concept.mistakes.all()], "attachments": [{"name": item.original_name, "content_type": item.content_type, "file_size": item.file_size} for item in concept.attachments.all()], "relations": [{"target_id": str(item.target_id), "relation_type": item.relation_type} for item in concept.outgoing_relations.all()], "freshness_status": concept.freshness_status, "last_verified_at": _date(concept.last_verified_at), "verification_note": concept.verification_note, "sections": [{"public_id": str(item.public_id), "title": item.title, "section_type": item.section_type, "content": item.content, "sort_order": item.sort_order} for item in concept.sections.all()], "sources": [{"source_type": item.source_type, "title": item.title, "url": item.url, "author": item.author, "publisher": item.publisher, "version": item.version, "note": item.note, "accessed_at": _date(item.accessed_at), "sort_order": item.sort_order} for item in concept.sources.all()], "contexts": [{"technology": item.technology, "version": item.version, "note": item.note, "sort_order": item.sort_order} for item in concept.contexts.all()], "review_cards": [{"public_id": str(item.public_id), "card_type": item.card_type, "question": item.question, "answer": item.answer, "hint": item.hint, "sort_order": item.sort_order, "is_active": item.is_active} for item in concept.review_cards.all()], "created_at": _date(concept.created_at), "updated_at": _date(concept.updated_at)}
         if include_reviews:
             state = concept.review_state
             row["review_state"] = {"status": state.status, "due_at": _date(state.due_at), "last_reviewed_at": _date(state.last_reviewed_at), "review_count": state.review_count, "lapse_count": state.lapse_count, "success_streak": state.success_streak, "interval_days": state.interval_days, "version": state.version, "scheduler_data": state.scheduler_data}
@@ -82,6 +83,21 @@ def export_markdown_zip(user):
             for title, content in (("Simple Explanation", concept["simple_explanation"]), ("Deep Dive", concept["deep_dive"])):
                 if content:
                     lines.extend([f"## {title}", "", content, ""])
+            if concept.get("contexts"):
+                lines.extend(["## Applies To", "", *[f"- {item['technology']} {item['version']}".rstrip() for item in concept["contexts"]], ""])
+            if concept.get("last_verified_at") or concept.get("verification_note"):
+                lines.extend(["## Freshness", "", f"Status: {concept.get('freshness_status', 'needs_verification')}"])
+                if concept.get("last_verified_at"):
+                    lines.append(f"Last verified: {concept['last_verified_at']}")
+                if concept.get("verification_note"):
+                    lines.extend(["", concept["verification_note"]])
+                lines.append("")
+            for section in concept.get("sections", []):
+                lines.extend([f"## {section['title']}", ""])
+                if section["section_type"] == "diagram":
+                    lines.extend(["```mermaid", section["content"], "```", ""])
+                else:
+                    lines.extend([section["content"], ""])
             if concept["aliases"]:
                 lines.extend(["## Aliases", "", *[f"- {item}" for item in concept["aliases"]], ""])
             for snippet in concept["snippets"]:
@@ -97,6 +113,11 @@ def export_markdown_zip(user):
             if concept["relations"]:
                 lines.extend(["## Related Concepts", ""])
                 lines.extend([f"- {concept_titles.get(item['target_id'], item['target_id'])} ({item['relation_type']})" for item in concept["relations"]])
+                lines.append("")
+            if concept.get("sources"):
+                lines.extend(["## Sources", ""])
+                for source in concept["sources"]:
+                    lines.append(f"- [{source['title']}]({source['url']})" if source.get("url") else f"- {source['title']}")
                 lines.append("")
             attachments = concept_attachments.get(concept["id"], [])
             if attachments:
@@ -123,7 +144,7 @@ def export_markdown_zip(user):
 def validate_import(payload, user):
     if not isinstance(payload, dict) or payload.get("format") != EXPORT_FORMAT:
         raise ValidationError("This is not a MindRepo export file.")
-    if payload.get("version") != EXPORT_VERSION:
+    if payload.get("version") not in {1, EXPORT_VERSION}:
         raise ValidationError("This export format version is not supported.")
     data = payload.get("data")
     if not isinstance(data, dict) or not isinstance(data.get("categories", []), list) or not isinstance(data.get("concepts", []), list):
@@ -152,10 +173,12 @@ def validate_import(payload, user):
             errors.append("Concept export identifiers must be unique.")
         if item.get("difficulty") not in Concept.Difficulty.values:
             errors.append(f"Invalid difficulty for {item['title']}.")
+        if item.get("freshness_status", Concept.Freshness.NEEDS_VERIFICATION) not in Concept.Freshness.values:
+            errors.append(f"Invalid freshness status for {item['title']}.")
         if item.get("category_id") and str(item["category_id"]) not in category_ids:
             errors.append(f"Unknown category for {item['title']}.")
         concept_ids.add(str(item["id"]))
-        for field in ("tags", "aliases", "snippets", "mistakes", "relations", "review_logs"):
+        for field in ("tags", "aliases", "snippets", "mistakes", "sections", "sources", "contexts", "review_cards", "relations", "review_logs"):
             if field in item and not isinstance(item[field], list):
                 errors.append(f"Invalid {field} collection in {item['title']}.")
         alias_values = [normalized(str(value)) for value in item.get("aliases", []) if str(value).strip()]
@@ -167,6 +190,18 @@ def validate_import(payload, user):
         for mistake in item.get("mistakes", []):
             if not isinstance(mistake, dict) or not mistake.get("title") or not mistake.get("description"):
                 errors.append(f"Invalid common mistake in {item['title']}.")
+        for section in item.get("sections", []):
+            if not isinstance(section, dict) or not str(section.get("title", "")).strip() or section.get("section_type", "standard") not in ConceptSection.Type.values:
+                errors.append(f"Invalid section in {item['title']}.")
+        for source in item.get("sources", []):
+            if not isinstance(source, dict) or not str(source.get("title", "")).strip() or (source.get("url") and not str(source["url"]).startswith(("http://", "https://"))):
+                errors.append(f"Invalid source in {item['title']}.")
+        for context in item.get("contexts", []):
+            if not isinstance(context, dict) or not str(context.get("technology", "")).strip():
+                errors.append(f"Invalid technology context in {item['title']}.")
+        for card in item.get("review_cards", []):
+            if not isinstance(card, dict) or card.get("card_type") not in ReviewCard.Type.values or (card.get("card_type") == ReviewCard.Type.BASIC and not str(card.get("question", "")).strip()):
+                errors.append(f"Invalid review card in {item['title']}.")
         for log in item.get("review_logs", []):
             required_log_fields = {"rating", "reviewed_at", "previous_status", "new_status", "previous_due_at", "new_due_at", "previous_interval_days", "new_interval_days"}
             if not isinstance(log, dict) or not required_log_fields.issubset(log) or log.get("rating") not in ReviewLog.Rating.values:
@@ -239,7 +274,7 @@ def apply_import(user, payload, strategy="skip"):
                 result["skipped"] += 1
                 continue
             title = _copy_title(user, item["title"]) if duplicate else item["title"]
-            concept = Concept.objects.create(owner=user, title=title, quick_definition=item["quick_definition"], simple_explanation=item.get("simple_explanation", ""), deep_dive=item.get("deep_dive", ""), difficulty=item["difficulty"], is_favorite=bool(item.get("is_favorite")), category=category_map.get(str(item.get("category_id"))))
+            concept = Concept.objects.create(owner=user, title=title, quick_definition=item["quick_definition"], simple_explanation=item.get("simple_explanation", ""), deep_dive=item.get("deep_dive", ""), difficulty=item["difficulty"], is_favorite=bool(item.get("is_favorite")), category=category_map.get(str(item.get("category_id"))), freshness_status=item.get("freshness_status", Concept.Freshness.NEEDS_VERIFICATION), last_verified_at=item.get("last_verified_at") or None, verification_note=item.get("verification_note", ""))
             concept_map[str(item["id"])] = concept
             created_ids.add(str(item["id"]))
             existing_by_title[normalized(title)] = concept
@@ -254,6 +289,14 @@ def apply_import(user, payload, strategy="skip"):
             ConceptAlias.objects.bulk_create([ConceptAlias(concept=concept, value=str(value).strip(), normalized_value=normalized(str(value))) for value in item.get("aliases", []) if str(value).strip()])
             CodeSnippet.objects.bulk_create([CodeSnippet(concept=concept, title=row.get("title", ""), language=row.get("language", "plaintext"), code=row.get("code", ""), explanation=row.get("explanation", ""), sort_order=row.get("sort_order", 0)) for row in item.get("snippets", []) if row.get("code")])
             CommonMistake.objects.bulk_create([CommonMistake(concept=concept, title=row.get("title", ""), description=row.get("description", ""), correction=row.get("correction", ""), sort_order=row.get("sort_order", 0)) for row in item.get("mistakes", []) if row.get("title") and row.get("description")])
+            ConceptSection.objects.bulk_create([ConceptSection(concept=concept, title=row["title"], section_type=row.get("section_type", "standard"), content=row.get("content", ""), sort_order=row.get("sort_order", 0)) for row in item.get("sections", [])])
+            ConceptSource.objects.bulk_create([ConceptSource(concept=concept, source_type=row.get("source_type", "documentation"), title=row["title"], url=row.get("url", ""), author=row.get("author", ""), publisher=row.get("publisher", ""), version=row.get("version", ""), note=row.get("note", ""), sort_order=row.get("sort_order", 0)) for row in item.get("sources", [])])
+            ConceptContext.objects.bulk_create([ConceptContext(concept=concept, technology=row["technology"], version=row.get("version", ""), note=row.get("note", ""), sort_order=row.get("sort_order", 0)) for row in item.get("contexts", [])])
+            for row in item.get("review_cards", []):
+                if row.get("card_type") != ReviewCard.Type.CONCEPT_RECALL:
+                    ReviewCard.objects.create(concept=concept, card_type=ReviewCard.Type.BASIC, question=row.get("question", ""), answer=row.get("answer", ""), hint=row.get("hint", ""), sort_order=row.get("sort_order", 0), is_active=bool(row.get("is_active", True)))
+            concept.save()
+            create_revision(concept, "import")
         for item in data["concepts"]:
             if str(item["id"]) not in created_ids:
                 continue
@@ -268,7 +311,11 @@ def apply_import(user, payload, strategy="skip"):
                 continue
             concept, state_data = concept_map[str(item["id"])], item.get("review_state")
             if state_data:
-                ConceptReviewState.objects.filter(concept=concept).update(**{key: state_data[key] for key in ("status", "review_count", "lapse_count", "success_streak", "interval_days", "version", "scheduler_data") if key in state_data}, due_at=parse_datetime(state_data["due_at"]) if state_data.get("due_at") else timezone.now(), last_reviewed_at=parse_datetime(state_data["last_reviewed_at"]) if state_data.get("last_reviewed_at") else None)
-                ReviewLog.objects.bulk_create([ReviewLog(concept=concept, rating=row["rating"], reviewed_at=parse_datetime(row["reviewed_at"]), previous_status=row["previous_status"], new_status=row["new_status"], previous_due_at=parse_datetime(row["previous_due_at"]), new_due_at=parse_datetime(row["new_due_at"]), previous_interval_days=row["previous_interval_days"], new_interval_days=row["new_interval_days"], scheduler_version=row.get("scheduler_version", "mindrepo-v1")) for row in item.get("review_logs", [])])
+                state_values = {key: state_data[key] for key in ("status", "review_count", "lapse_count", "success_streak", "interval_days", "version", "scheduler_data") if key in state_data}
+                state_values.update(due_at=parse_datetime(state_data["due_at"]) if state_data.get("due_at") else timezone.now(), last_reviewed_at=parse_datetime(state_data["last_reviewed_at"]) if state_data.get("last_reviewed_at") else None)
+                ConceptReviewState.objects.filter(concept=concept).update(**state_values)
+                default_card = concept.review_cards.get(card_type=ReviewCard.Type.CONCEPT_RECALL)
+                ReviewCardState.objects.filter(card=default_card).update(**state_values)
+                ReviewLog.objects.bulk_create([ReviewLog(concept=concept, card=default_card, rating=row["rating"], reviewed_at=parse_datetime(row["reviewed_at"]), previous_status=row["previous_status"], new_status=row["new_status"], previous_due_at=parse_datetime(row["previous_due_at"]), new_due_at=parse_datetime(row["new_due_at"]), previous_interval_days=row["previous_interval_days"], new_interval_days=row["new_interval_days"], scheduler_version=row.get("scheduler_version", "mindrepo-v1")) for row in item.get("review_logs", [])])
                 result["review_logs"] += len(item.get("review_logs", []))
     return result

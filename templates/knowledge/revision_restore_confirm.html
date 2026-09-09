@@ -1,0 +1,3 @@
+{% extends "layouts/app.html" %}
+{% block title %}Restore revision · MindRepo{% endblock %}
+{% block app_content %}<main class="page-container knowledge-page"><section class="reading-section"><h1>Restore revision {{ revision.revision_number }}?</h1><p>This restores Concept content and review-card wording. It does not change review schedules, review history, or attachment files.</p><form method="post">{% csrf_token %}<a class="btn btn-outline-secondary" href="{% url 'knowledge:revision_history' concept.pk concept.slug %}">Cancel</a> <button class="btn btn-danger" type="submit">Restore this revision</button></form></section></main>{% endblock %}

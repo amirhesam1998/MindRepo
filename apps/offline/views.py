@@ -22,6 +22,15 @@ def _require_offline_knowledge_enabled():
         raise Http404
 
 
+def _protocol_ok(request):
+    try:
+        version = int(request.GET.get("protocol_version", ""))
+    except ValueError:
+        version = None
+    if version != PROTOCOL_VERSION:
+        return json_response({"status": "upgrade_required", "required_protocol": PROTOCOL_VERSION, "full_resync_required": True}, status=400)
+
+
 class OfflineSettingsView(LoginRequiredMixin, TemplateView):
     template_name = "offline/settings.html"
 
@@ -34,6 +43,8 @@ class OfflineSettingsView(LoginRequiredMixin, TemplateView):
 @require_GET
 def bootstrap(request):
     _require_offline_knowledge_enabled()
+    if response := _protocol_ok(request):
+        return response
     try:
         after = max(0, int(request.GET.get("after", "0")))
         snapshot_cursor = request.GET.get("cursor")
@@ -71,6 +82,8 @@ def bootstrap(request):
 @require_GET
 def changes(request):
     _require_offline_knowledge_enabled()
+    if response := _protocol_ok(request):
+        return response
     try:
         cursor = int(request.GET.get("cursor", "0"))
     except ValueError:
@@ -100,7 +113,7 @@ def mutations(request):
     except (TypeError, json.JSONDecodeError):
         return json_response({"message": "Invalid JSON."}, status=400)
     if payload.get("protocol_version") != PROTOCOL_VERSION:
-        return json_response({"status": "upgrade_required", "message": "Refresh MindRepo before syncing."}, status=400)
+        return json_response({"status": "upgrade_required", "required_protocol": PROTOCOL_VERSION, "full_resync_required": True, "message": "Refresh MindRepo before syncing."}, status=400)
     mutations_list = payload.get("mutations")
     if not isinstance(mutations_list, list) or not mutations_list:
         return json_response({"message": "Mutations are required."}, status=400)

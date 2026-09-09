@@ -3,6 +3,8 @@
 {% block title %}{% if object %}{{ "Edit"|tr }} {{ object.title }}{% else %}{{ "New concept"|tr }}{% endif %} · MindRepo{% endblock %}
 {% block extra_head %}
   <link rel="stylesheet" href="{% static 'css/concept-editor.css' %}">
+  <link rel="stylesheet" href="{% static 'vendor/toastui-editor/toastui-editor-3.2.2.css' %}">
+  <link rel="stylesheet" href="{% static 'vendor/toastui-editor/toastui-editor-dark-3.2.2.css' %}">
 {% endblock %}
 {% block app_content %}
 <main class="page-container concept-editor-page">
@@ -11,6 +13,7 @@
       <a class="back-link" href="{% if object %}{% url 'knowledge:concept_detail' object.pk object.slug %}{% else %}{% url 'knowledge:library' %}{% endif %}">← {{ "Back"|tr }}</a>
       <h1 dir="auto">{% if object %}{{ "Edit"|tr }} {{ object.title }}{% else %}{{ "New concept"|tr }}{% endif %}</h1>
       <p>{% if object %}{{ "Keep the useful details close to the idea."|tr }}{% else %}{{ "Capture the idea quickly. Add details only when useful."|tr }}{% endif %}</p>
+      <button class="field-guide-trigger" type="button" data-open-field-guide>? Field Guide <span lang="fa" dir="rtl">راهنمای فیلدها</span></button>
     </div>
   </header>
 
@@ -36,10 +39,10 @@
       </button>
       <div class="editor-section__body">
         <div class="editor-grid organization-grid">
-          <div class="editor-field">{{ form.category.label_tag }}{{ form.category }}{{ form.category.errors }}</div>
-          <div class="editor-field">{{ form.difficulty.label_tag }}{{ form.difficulty }}{{ form.difficulty.errors }}</div>
+          <div class="editor-field"><label for="{{ form.category.id_for_label }}">{{ form.category.label }} {% include "knowledge/includes/field_help.html" with title="Category" fa_title="دسته‌بندی" fa="دسته اصلی این مفهوم در ساختار دانش شماست. مثلاً Programming → C# → LINQ." en="The primary location of this concept in your knowledge hierarchy. For example: Programming → C# → LINQ." %}</label>{{ form.category }}{{ form.category.errors }}</div>
+          <div class="editor-field"><label for="{{ form.difficulty.id_for_label }}">{{ form.difficulty.label }} {% include "knowledge/includes/field_help.html" with title="Difficulty" fa_title="دشواری" fa="سطح دشواری موضوع را برای فیلتر و دسته‌بندی مشخص می‌کند و مستقیماً برنامه مرور را تعیین نمی‌کند." en="Describes topic difficulty for organization and filtering. It does not directly control spaced-repetition scheduling." %}</label>{{ form.difficulty }}{{ form.difficulty.errors }}</div>
           <div class="editor-field editor-tags-field">
-            <label for="tag-editor-input">{{ "Tags"|tr }}</label>{{ form.tag_names }}
+            <label for="tag-editor-input">{{ "Tags"|tr }} {% include "knowledge/includes/field_help.html" with title="Tags" fa_title="برچسب" fa="کلیدواژه‌های آزاد برای پیدا کردن مفهوم هستند. هر Tag را بنویسید و Enter بزنید؛ مثال: LINQ، C#، EF Core." en="Flexible keywords used to discover concepts. Type a tag and press Enter, for example LINQ, C#, or EF Core." %}</label>{{ form.tag_names }}
             <div class="tag-editor" data-tag-editor>
               <div class="tag-editor__chips" data-tag-chips></div>
               <input id="tag-editor-input" type="text" autocomplete="off" dir="auto" placeholder="{{ 'Type a tag and press Enter'|tr }}" data-tag-input>
@@ -47,7 +50,7 @@
             <small>{{ "Type a tag and press Enter"|tr }}</small>{{ form.tag_names.errors }}
           </div>
           <div class="editor-field favorite-field">
-            <span class="editor-label">{{ "Favorite"|tr }}</span>
+            <span class="editor-label">{{ "Favorite"|tr }} {% include "knowledge/includes/field_help.html" with title="Favorite" fa_title="علاقه‌مندی" fa="مفاهیم مهم یا پرکاربرد را برای دسترسی سریع‌تر به Favorites اضافه می‌کند." en="Adds important or frequently used concepts to Favorites for faster access." %}</span>
             {{ form.is_favorite }}
             <label class="favorite-toggle" for="{{ form.is_favorite.id_for_label }}" data-favorite-label><span aria-hidden="true">☆</span> {{ "Add to favorites"|tr }}</label>
           </div>
@@ -60,8 +63,8 @@
         <span><strong>☷ {{ "Explanations"|tr }}</strong><small>{{ "Add context when quick recall is not enough."|tr }}</small></span><span class="editor-chevron" aria-hidden="true">⌄</span>
       </button>
       <div class="editor-section__body">
-        <div class="editor-field">{{ form.simple_explanation.label_tag }}{{ form.simple_explanation }}{{ form.simple_explanation.errors }}</div>
-        <div class="editor-field">{{ form.deep_dive.label_tag }}{{ form.deep_dive }}{{ form.deep_dive.errors }}</div>
+        <div class="editor-field"><label for="{{ form.simple_explanation.id_for_label }}">{{ form.simple_explanation.label }} {% include "knowledge/includes/field_help.html" with title="Simple Explanation" fa_title="توضیح ساده" fa="توضیحی کوتاه و قابل‌فهم که حدود یک دقیقه بعد بتوانید مفهوم را دوباره درک کنید." en="A short, approachable explanation that should help you understand the concept again in roughly a minute." %}</label>{{ form.simple_explanation }}{{ form.simple_explanation.errors }}</div>
+        <div class="editor-field"><label for="{{ form.deep_dive.id_for_label }}">{{ form.deep_dive.label }} {% include "knowledge/includes/field_help.html" with title="Deep Dive" fa_title="بررسی عمیق" fa="توضیح کامل فنی شامل جزئیات، محدودیت‌ها، Edge Caseها و نکات Performance." en="The detailed technical explanation, including internals, limitations, edge cases, performance, and deeper reasoning." %}</label>{{ form.deep_dive }}{{ form.deep_dive.errors }}</div>
       </div>
     </section>
 
@@ -111,12 +114,60 @@
       <div class="editor-section__body"><div class="inline-formset" data-formset data-prefix="{{ formsets.relations.prefix }}" data-sortable="false">{{ formsets.relations.management_form }}<div class="inline-formset__items" data-formset-items>{% for nested in formsets.relations %}<div class="relation-row" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.DELETE }}<div class="editor-field">{{ nested.target.label_tag }}{{ nested.target }}{{ nested.target.errors }}</div><div class="editor-field">{{ nested.relation_type.label_tag }}{{ nested.relation_type }}{{ nested.relation_type.errors }}</div><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></div>{% empty %}<p class="editor-empty" data-empty-state>{{ "No related concepts yet."|tr }}</p>{% endfor %}</div><template data-empty-form><div class="relation-row" data-formset-row>{% for hidden in formsets.relations.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.relations.empty_form.DELETE }}<div class="editor-field">{{ formsets.relations.empty_form.target.label_tag }}{{ formsets.relations.empty_form.target }}</div><div class="editor-field">{{ formsets.relations.empty_form.relation_type.label_tag }}{{ formsets.relations.empty_form.relation_type }}</div><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></div></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add related concept"|tr }}</button></div></div>
     </section>
 
+    <section class="editor-section {% if form.freshness_status.errors or formsets.contexts.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if form.freshness_status.errors or formsets.contexts.errors %}true{% else %}false{% endif %}"><span><strong>{{ "Knowledge freshness"|tr }}</strong><small>{{ "Track where this knowledge applies and when you last checked it."|tr }}</small></span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body"><div class="editor-grid"><div class="editor-field">{{ form.freshness_status.label_tag }}{{ form.freshness_status }}{{ form.freshness_status.errors }}</div><div class="editor-field">{{ form.last_verified_at.label_tag }}{{ form.last_verified_at }}{{ form.last_verified_at.errors }}</div></div><div class="editor-field">{{ form.verification_note.label_tag }}{{ form.verification_note }}{{ form.verification_note.errors }}</div>
+        <div class="inline-formset" data-formset data-prefix="{{ formsets.contexts.prefix }}" data-sortable="true">{{ formsets.contexts.management_form }}<div data-formset-items>{% for nested in formsets.contexts %}<article class="nested-editor-card" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.sort_order }}{{ nested.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Technology context"|tr }}</strong><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></header><div class="editor-grid"><div class="editor-field">{{ nested.technology.label_tag }}{{ nested.technology }}</div><div class="editor-field">{{ nested.version.label_tag }}{{ nested.version }}</div></div><div class="editor-field">{{ nested.note.label_tag }}{{ nested.note }}</div></article>{% empty %}<p class="editor-empty" data-empty-state>{{ "No technology context yet."|tr }}</p>{% endfor %}</div><template data-empty-form><article class="nested-editor-card" data-formset-row>{% for hidden in formsets.contexts.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.contexts.empty_form.sort_order }}{{ formsets.contexts.empty_form.DELETE }}<header><strong>{{ "Technology context"|tr }}</strong><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></header><div class="editor-grid"><div class="editor-field">{{ formsets.contexts.empty_form.technology.label_tag }}{{ formsets.contexts.empty_form.technology }}</div><div class="editor-field">{{ formsets.contexts.empty_form.version.label_tag }}{{ formsets.contexts.empty_form.version }}</div></div><div class="editor-field">{{ formsets.contexts.empty_form.note.label_tag }}{{ formsets.contexts.empty_form.note }}</div></article></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add technology context"|tr }}</button></div></div>
+    </section>
+
+    <section class="editor-section {% if formsets.sections.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.sections.errors %}true{% else %}false{% endif %}"><span><strong>{{ "Custom sections"|tr }}</strong><small>{{ "Add detailed Markdown notes, takeaways, and diagrams."|tr }}</small></span><span class="section-count">{{ formsets.sections.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body"><div class="inline-formset" data-formset data-prefix="{{ formsets.sections.prefix }}" data-sortable="true">{{ formsets.sections.management_form }}<div data-formset-items>{% for nested in formsets.sections %}<article class="nested-editor-card" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.sort_order }}{{ nested.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Section"|tr }}</strong><span class="nested-actions"><button type="button" class="editor-icon-button" data-move-up aria-label="{{ 'Move up'|tr }}">↑</button><button type="button" class="editor-icon-button" data-move-down aria-label="{{ 'Move down'|tr }}">↓</button><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></span></header><div class="editor-grid"><div class="editor-field">{{ nested.section_type.label_tag }}{{ nested.section_type }}{{ nested.section_type.errors }}</div><div class="editor-field">{{ nested.title.label_tag }}{{ nested.title }}{{ nested.title.errors }}</div></div><div class="editor-field">{{ nested.content.label_tag }}{{ nested.content }}{{ nested.content.errors }}</div></article>{% empty %}<p class="editor-empty" data-empty-state>{{ "No custom sections yet."|tr }}</p>{% endfor %}</div><template data-empty-form><article class="nested-editor-card" data-formset-row>{% for hidden in formsets.sections.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.sections.empty_form.sort_order }}{{ formsets.sections.empty_form.DELETE }}<header><strong>{{ "Section"|tr }}</strong><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></header><div class="editor-grid"><div class="editor-field">{{ formsets.sections.empty_form.section_type.label_tag }}{{ formsets.sections.empty_form.section_type }}</div><div class="editor-field">{{ formsets.sections.empty_form.title.label_tag }}{{ formsets.sections.empty_form.title }}</div></div><div class="editor-field">{{ formsets.sections.empty_form.content.label_tag }}{{ formsets.sections.empty_form.content }}</div></article></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add section"|tr }}</button></div></div>
+    </section>
+
+    <section class="editor-section {% if formsets.sources.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.sources.errors %}true{% else %}false{% endif %}"><span><strong>{{ "Sources & references"|tr }}</strong><small>{{ "Keep the material you trust with the concept."|tr }}</small></span><span class="section-count">{{ formsets.sources.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body"><div class="inline-formset" data-formset data-prefix="{{ formsets.sources.prefix }}" data-sortable="true">{{ formsets.sources.management_form }}<div data-formset-items>{% for nested in formsets.sources %}<article class="nested-editor-card" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.sort_order }}{{ nested.DELETE }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Source"|tr }}</strong><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></header><div class="editor-grid"><div class="editor-field">{{ nested.source_type.label_tag }}{{ nested.source_type }}</div><div class="editor-field">{{ nested.title.label_tag }}{{ nested.title }}{{ nested.title.errors }}</div></div><div class="editor-field">{{ nested.url.label_tag }}{{ nested.url }}{{ nested.url.errors }}</div><div class="editor-grid"><div class="editor-field">{{ nested.author.label_tag }}{{ nested.author }}</div><div class="editor-field">{{ nested.version.label_tag }}{{ nested.version }}</div></div><div class="editor-field">{{ nested.note.label_tag }}{{ nested.note }}</div></article>{% empty %}<p class="editor-empty" data-empty-state>{{ "No sources yet."|tr }}</p>{% endfor %}</div><template data-empty-form><article class="nested-editor-card" data-formset-row>{% for hidden in formsets.sources.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.sources.empty_form.sort_order }}{{ formsets.sources.empty_form.DELETE }}<header><strong>{{ "Source"|tr }}</strong><button type="button" class="editor-text-button" data-remove-row>{{ "Remove"|tr }}</button></header><div class="editor-grid"><div class="editor-field">{{ formsets.sources.empty_form.source_type.label_tag }}{{ formsets.sources.empty_form.source_type }}</div><div class="editor-field">{{ formsets.sources.empty_form.title.label_tag }}{{ formsets.sources.empty_form.title }}</div></div><div class="editor-field">{{ formsets.sources.empty_form.url.label_tag }}{{ formsets.sources.empty_form.url }}</div></article></template><button type="button" class="editor-add-button" data-add-row>+ {{ "Add source"|tr }}</button></div></div>
+    </section>
+
+    <section class="editor-section {% if formsets.review_cards.errors %}is-open{% endif %}" data-editor-section>
+      <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.review_cards.errors %}true{% else %}false{% endif %}"><span><strong>{{ "Review cards"|tr }}</strong><small>{{ "Add independent questions for this concept."|tr }}</small></span><span class="section-count">{{ formsets.review_cards.initial_form_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+      <div class="editor-section__body">
+        <p class="editor-empty"><strong>{{ "Default concept recall"|tr }}</strong> — {{ "Uses the concept title and quick definition."|tr }}</p>
+        <div class="inline-formset" data-formset data-prefix="{{ formsets.review_cards.prefix }}" data-sortable="true">
+          {{ formsets.review_cards.management_form }}
+          <h3 class="editor-subheading">{{ "Active review cards"|tr }} <span class="section-count">{{ active_review_card_count }}</span></h3>
+          <div data-formset-items>
+            {% if active_review_card_count %}{% for nested in formsets.review_cards %}{% if nested.instance.is_active %}
+              <article class="nested-editor-card" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.sort_order }}<header><button type="button" class="drag-handle" aria-label="{{ 'Drag to reorder'|tr }}">⋮⋮</button><strong>{{ "Review card"|tr }}</strong></header><div class="editor-field">{{ nested.question.label_tag }}{{ nested.question }}{{ nested.question.errors }}</div><div class="editor-field">{{ nested.answer.label_tag }}{{ nested.answer }}{{ nested.answer.errors }}</div><div class="editor-field">{{ nested.hint.label_tag }}{{ nested.hint }}</div><div class="editor-field" data-review-card-state>{{ nested.is_active }}</div></article>
+            {% endif %}{% endfor %}{% else %}<p class="editor-empty" data-empty-state>{{ "No active custom review cards yet."|tr }}</p>{% endif %}
+          </div>
+          <template data-empty-form><article class="nested-editor-card" data-formset-row>{% for hidden in formsets.review_cards.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{{ formsets.review_cards.empty_form.sort_order }}<header><strong>{{ "Review card"|tr }}</strong></header><div class="editor-field">{{ formsets.review_cards.empty_form.question.label_tag }}{{ formsets.review_cards.empty_form.question }}</div><div class="editor-field">{{ formsets.review_cards.empty_form.answer.label_tag }}{{ formsets.review_cards.empty_form.answer }}</div><div class="editor-field">{{ formsets.review_cards.empty_form.hint.label_tag }}{{ formsets.review_cards.empty_form.hint }}</div><div class="editor-field" data-review-card-state>{{ formsets.review_cards.empty_form.is_active }}</div></article></template>
+          <button type="button" class="editor-add-button" data-add-row>+ {{ "Add review card"|tr }}</button>
+          {% if archived_review_card_count %}
+            <section class="editor-section archived-review-cards {% if formsets.review_cards.errors %}is-open{% endif %}" data-editor-section>
+              <button class="editor-section__toggle" type="button" aria-expanded="{% if formsets.review_cards.errors %}true{% else %}false{% endif %}"><span><strong>{{ "Archived review cards"|tr }}</strong><small>{{ "Previously archived study cards."|tr }}</small></span><span class="section-count">{{ archived_review_card_count }}</span><span class="editor-chevron" aria-hidden="true">⌄</span></button>
+              <div class="editor-section__body">
+                {% for nested in formsets.review_cards %}{% if not nested.instance.is_active %}
+                  <article class="nested-editor-card is-archived" data-formset-row>{% for hidden in nested.hidden_fields %}{{ hidden }}{% endfor %}{{ nested.question.as_hidden }}{{ nested.answer.as_hidden }}{{ nested.hint.as_hidden }}{{ nested.sort_order }}<header><strong>{{ nested.instance.display_question }}</strong><span class="card-status">{{ "Archived"|tr }}</span></header><p class="editor-empty">{{ "Restoring keeps its previous schedule and review history."|tr }}</p><div class="editor-field" data-review-card-state>{{ nested.is_active }}</div></article>
+                {% endif %}{% endfor %}
+              </div>
+            </section>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
     <div class="editor-savebar"><a class="btn btn-outline-secondary" href="{% if object %}{% url 'knowledge:concept_detail' object.pk object.slug %}{% else %}{% url 'knowledge:library' %}{% endif %}">{{ "Cancel"|tr }}</a><button class="btn btn-primary" type="submit" data-save-button>{{ "Save concept"|tr }}</button></div>
   </form>
+  {% include "knowledge/includes/field_guide.html" %}
 </main>
 {% endblock %}
 {% block extra_js %}
+  <script src="{% static 'vendor/toastui-editor/toastui-editor-3.2.2.js' %}"></script>
   <script src="{% static 'vendor/ace/ace.js' %}" data-ace-base="{% static 'vendor/ace' %}"></script>
   <script src="{% static 'vendor/sortable/sortable.min.js' %}"></script>
+  <script src="{% static 'vendor/mermaid/mermaid-11.4.1.min.js' %}"></script>
   <script src="{% static 'js/concept-editor.js' %}" defer></script>
+  <script src="{% static 'js/knowledge-enhancements.js' %}" defer></script>
 {% endblock %}

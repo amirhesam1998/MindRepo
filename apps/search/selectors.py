@@ -60,7 +60,14 @@ def _portable_search(user, query: str):
     quick_match = matches("quick_definition", "icontains")
     simple_match = matches("simple_explanation", "icontains")
     deep_match = matches("deep_dive", "icontains")
-    content = quick_match | simple_match | deep_match
+    section_title = matches("sections__title", "icontains")
+    section_content = matches("sections__content", "icontains")
+    source_title = matches("sources__title", "icontains")
+    source_note = matches("sources__note", "icontains")
+    context_technology = matches("contexts__technology", "icontains") | matches("contexts__version", "icontains")
+    card_question = matches("review_cards__question", "icontains")
+    card_answer = matches("review_cards__answer", "icontains")
+    content = quick_match | simple_match | deep_match | section_title | section_content | source_title | source_note | context_technology | card_question | card_answer
 
     alias_base = ConceptAlias.objects.filter(concept_id=OuterRef("pk"))
     tag_base = Tag.objects.filter(concepts__pk=OuterRef("pk"), owner=user)
@@ -83,6 +90,13 @@ def _portable_search(user, query: str):
         When(quick_match, then=Value(500)),
         When(simple_match, then=Value(400)),
         When(deep_match, then=Value(300)),
+        When(card_question, then=Value(280)),
+        When(section_title, then=Value(260)),
+        When(source_title, then=Value(240)),
+        When(context_technology, then=Value(220)),
+        When(section_content, then=Value(180)),
+        When(card_answer, then=Value(160)),
+        When(source_note, then=Value(140)),
         default=Value(0),
         output_field=IntegerField(),
     )

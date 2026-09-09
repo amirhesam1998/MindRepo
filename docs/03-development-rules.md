@@ -36,11 +36,13 @@ Search must stay entirely inside MindRepo infrastructure. Normalize conservative
 
 ## Data and performance
 
-Use `select_related` and `prefetch_related` for displayed relationships. Library listings select categories/prefetch tags; concept detail prefetches child records and relation targets. Add indexes after identifying the query path. Keep exports/imports in a future `knowledge` portability module or management command, with schema versioning and validation; do not add an API just for export.
+Use `select_related` and `prefetch_related` for displayed relationships. Library listings select categories/prefetch tags; concept detail prefetches child records and relation targets. Add indexes after identifying the query path. `knowledge.portability` owns versioned export/import services; do not add a general API just for export.
 
 Private Concept attachments use generated storage names and authenticated owner-checked `FileResponse` downloads. Do not expose `MEDIA_ROOT` through a web-server media alias. Validate extension, reported MIME type, and size server-side; attachment binaries stay out of IndexedDB and normal JSON export.
 
 The Concept editor self-hosts Ace 1.36.2 and SortableJS 1.15.3 only on create/edit pages. Do not replace them with CDN references or move scheduling/domain validation into editor JavaScript.
+
+Markdown always uses the centralized server renderer: raw HTML remains disabled. Mermaid is self-hosted and strict; source is data, never injected HTML. Nested Concept resources must remain owner-scoped. Revisions restore content only, never scheduler state/history or attachment binaries; private HTML remains outside Cache Storage.
 
 ## Review conventions
 

@@ -5,7 +5,8 @@ from django.forms import BaseInlineFormSet, inlineformset_factory
 
 from apps.core.i18n import translate_text
 
-from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptRelation, Tag, normalized
+from .models import Category, CodeSnippet, CommonMistake, Concept, ConceptAlias, ConceptContext, ConceptRelation, ConceptSection, ConceptSource, Tag, normalized
+from apps.reviews.models import ReviewCard
 
 
 FORM_LABELS = {
@@ -64,11 +65,11 @@ class ConceptForm(LocalizedModelForm):
 
     class Meta:
         model = Concept
-        fields = ["title", "category", "difficulty", "quick_definition", "simple_explanation", "deep_dive", "is_favorite"]
+        fields = ["title", "category", "difficulty", "quick_definition", "simple_explanation", "deep_dive", "freshness_status", "last_verified_at", "verification_note", "is_favorite"]
         widgets = {
             "quick_definition": forms.Textarea(attrs={"rows": 3}),
-            "simple_explanation": forms.Textarea(attrs={"rows": 5}),
-            "deep_dive": forms.Textarea(attrs={"rows": 8}),
+            "simple_explanation": forms.Textarea(attrs={"rows": 5, "class": "markdown-source"}),
+            "deep_dive": forms.Textarea(attrs={"rows": 8, "class": "markdown-source"}),
         }
 
     def __init__(self, *args, user, **kwargs):
@@ -90,6 +91,9 @@ class ConceptForm(LocalizedModelForm):
         add_children(None)
         self.fields["category"].choices = choices
         self.fields["is_favorite"].widget.attrs["class"] = "favorite-input"
+        self.fields["freshness_status"].required = False
+        self.fields["last_verified_at"].required = False
+        self.fields["verification_note"].required = False
         if self.instance.pk:
             self.fields["tag_names"].initial = json.dumps(list(self.instance.tags.values_list("name", flat=True)))
 
@@ -176,13 +180,52 @@ class RelationForm(LocalizedModelForm):
         self.fields["target"].queryset = Concept.objects.filter(owner=user).exclude(pk=self.instance.source_id)
 
 
+class SectionForm(LocalizedModelForm):
+    class Meta:
+        model = ConceptSection
+        fields = ["section_type", "title", "content", "sort_order"]
+        widgets = {"content": forms.Textarea(attrs={"rows": 8, "class": "markdown-source"}), "sort_order": forms.HiddenInput()}
+
+
+class SourceForm(LocalizedModelForm):
+    class Meta:
+        model = ConceptSource
+        fields = ["source_type", "title", "url", "author", "publisher", "version", "note", "accessed_at", "sort_order"]
+        widgets = {"sort_order": forms.HiddenInput(), "accessed_at": forms.DateInput(attrs={"type": "date"})}
+
+    def clean_url(self):
+        url = self.cleaned_data["url"]
+        if url and not url.startswith(("https://", "http://")):
+            raise forms.ValidationError("Use an http or https URL.")
+        return url
+
+
+class ContextForm(LocalizedModelForm):
+    class Meta:
+        model = ConceptContext
+        fields = ["technology", "version", "note", "sort_order"]
+        widgets = {"sort_order": forms.HiddenInput()}
+
+
+class ReviewCardForm(LocalizedModelForm):
+    class Meta:
+        model = ReviewCard
+        fields = ["question", "answer", "hint", "sort_order", "is_active"]
+        widgets = {"answer": forms.Textarea(attrs={"rows": 6, "class": "markdown-source"}), "sort_order": forms.HiddenInput()}
+
+
 class EditorInlineFormSet(BaseInlineFormSet):
     def add_fields(self, form, index):
         super().add_fields(form, index)
-        form.fields["DELETE"].widget = forms.HiddenInput()
+        if "DELETE" in form.fields:
+            form.fields["DELETE"].widget = forms.HiddenInput()
 
 
 AliasFormSet = inlineformset_factory(Concept, ConceptAlias, form=AliasForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
 SnippetFormSet = inlineformset_factory(Concept, CodeSnippet, form=SnippetForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
 MistakeFormSet = inlineformset_factory(Concept, CommonMistake, form=MistakeForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
 RelationFormSet = inlineformset_factory(Concept, ConceptRelation, fk_name="source", form=RelationForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+SectionFormSet = inlineformset_factory(Concept, ConceptSection, form=SectionForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+SourceFormSet = inlineformset_factory(Concept, ConceptSource, form=SourceForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+ContextFormSet = inlineformset_factory(Concept, ConceptContext, form=ContextForm, formset=EditorInlineFormSet, extra=0, can_delete=True)
+ReviewCardFormSet = inlineformset_factory(Concept, ReviewCard, form=ReviewCardForm, formset=EditorInlineFormSet, extra=0, can_delete=False)
